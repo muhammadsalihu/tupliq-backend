@@ -1,0 +1,133 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum HackathonTag {
+  Live
+  Upcoming
+}
+
+model User {
+  id                 String   @id @default(uuid())
+  name               String
+  email              String   @unique
+  passwordHash       String
+  onboardingComplete Boolean  @default(false)
+  selectedInterests  String[] @default([])
+  agentsExplored     String[] @default([]) // agent ids: "claude" | "chatgpt" | "gemini"
+  notificationsOn    Boolean  @default(true)
+  darkModeOn         Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  joinedHackathons  HackathonParticipant[]
+  completedLessons  LessonCompletion[]
+  redeemedCodes     InviteCode[]
+
+  @@map("users")
+}
+
+model Hackathon {
+  id        String       @id @default(uuid())
+  title     String
+  tag       HackathonTag
+  desc      String
+  meta      String
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  lessons      Lesson[]
+  videos       Video[]
+  partners     Partner[]
+  participants HackathonParticipant[]
+  inviteCodes  InviteCode[]
+
+  @@map("hackathons")
+}
+
+model Lesson {
+  id          String   @id @default(uuid())
+  hackathonId String
+  title       String
+  position    Int      @default(0)
+
+  hackathon  Hackathon          @relation(fields: [hackathonId], references: [id], onDelete: Cascade)
+  completions LessonCompletion[]
+
+  @@index([hackathonId])
+  @@map("lessons")
+}
+
+model Video {
+  id          String @id @default(uuid())
+  hackathonId String
+  title       String
+  duration    String // display string, e.g. "6:12"
+  position    Int    @default(0)
+
+  hackathon Hackathon @relation(fields: [hackathonId], references: [id], onDelete: Cascade)
+
+  @@index([hackathonId])
+  @@map("videos")
+}
+
+model Partner {
+  id          String @id @default(uuid())
+  hackathonId String
+  name        String
+  position    Int    @default(0)
+
+  hackathon Hackathon @relation(fields: [hackathonId], references: [id], onDelete: Cascade)
+
+  @@index([hackathonId])
+  @@map("partners")
+}
+
+// A user having joined a hackathon (mirrors Firestore's joinedHackathonIds).
+model HackathonParticipant {
+  userId      String
+  hackathonId String
+  joinedAt    DateTime @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  hackathon Hackathon @relation(fields: [hackathonId], references: [id], onDelete: Cascade)
+
+  @@id([userId, hackathonId])
+  @@map("hackathon_participants")
+}
+
+// A user having completed a lesson (mirrors Firestore's completedLessonKeys).
+model LessonCompletion {
+  userId      String
+  lessonId    String
+  completedAt DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@id([userId, lessonId])
+  @@map("lesson_completions")
+}
+
+// One row per invite code emailed to a student for a specific hackathon.
+// Doc-ID-as-code pattern from Firestore, kept as the primary key here too.
+model InviteCode {
+  code         String    @id
+  hackathonId  String
+  used         Boolean   @default(false)
+  usedByUserId String?
+  usedAt       DateTime?
+  invitedEmail String?
+  createdAt    DateTime  @default(now())
+
+  hackathon Hackathon @relation(fields: [hackathonId], references: [id], onDelete: Cascade)
+  usedBy    User?     @relation(fields: [usedByUserId], references: [id])
+
+  @@index([hackathonId])
+  @@map("invite_codes")
+}
