@@ -1,4 +1,5 @@
 import { Body, Controller, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser, RequestUser } from '../auth/decorators/current-user.decorator';
 import { UsersService } from './users.service';
@@ -6,6 +7,8 @@ import { CompleteOnboardingDto } from './dto/complete-onboarding.dto';
 import { UpdateInterestsDto } from './dto/update-interests.dto';
 import { UpdateSettingsDto } from './dto/update-settings.dto';
 
+@ApiTags('users')
+@ApiBearerAuth('bearer')
 @Controller('users/me')
 @UseGuards(JwtAuthGuard)
 export class UsersController {

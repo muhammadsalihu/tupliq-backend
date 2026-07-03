@@ -19,6 +19,11 @@ npm run prisma:seed                   # optional: seeds 3 demo hackathons + invi
 npm run start:dev
 ```
 
+Once running, interactive API docs (Swagger UI) are at `/docs` (e.g.
+`http://localhost:3000/docs` locally, or `https://<your-render-url>/docs`
+once deployed) — every endpoint below, with request/response schemas and a
+built-in "Authorize" button for both the bearer token and the `x-admin-key`.
+
 Generate secrets for `JWT_SECRET` / `ADMIN_API_KEY` with:
 ```bash
 openssl rand -hex 32
