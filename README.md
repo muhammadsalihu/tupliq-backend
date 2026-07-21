@@ -13,7 +13,7 @@ bcrypt password hashing.
 
 ```bash
 npm install
-cp .env.example .env   # fill in DATABASE_URL, JWT_SECRET, ADMIN_API_KEY (see below)
+cp .env.example .env   # fill in DATABASE_URL, JWT_SECRET, ADMIN_API_KEY, RESEND_API_KEY
 npx prisma migrate dev --name init   # creates tables in your local/dev Postgres
 npm run prisma:seed                   # optional: seeds 3 demo hackathons + invite code RACE-4821
 npm run start:dev
@@ -56,6 +56,17 @@ All endpoints are prefixed with the deployed base URL (no global `/api` prefix).
 `Bearer` = `Authorization: Bearer <accessToken>` from register/login.
 `x-admin-key` = header matching the `ADMIN_API_KEY` env var — use this from
 an admin tool/script, never from the mobile app itself.
+
+## Registration invite email
+
+When `POST /auth/register` creates a user, the backend generates a one-time
+invite code and sends a welcome email through Resend. Configure:
+
+- `RESEND_API_KEY`: your Resend API key.
+- `WELCOME_EMAIL_FROM`: a verified Resend sender. `onboarding@resend.dev` is
+  useful only for testing.
+- `REGISTRATION_HACKATHON_ID`: optional. If omitted, new users are invited to
+  the first `Live` hackathon, or the first hackathon if none are live.
 
 ## Deploying to Render
 
