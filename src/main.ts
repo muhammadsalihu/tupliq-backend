@@ -11,7 +11,7 @@ async function bootstrap() {
   // contentSecurityPolicy is disabled because its default script-src blocks
   // Swagger UI's inline bootstrap script (served below at /docs) — this API
   // otherwise only returns JSON, so there's no HTML surface left to protect.
-  app.use(helmet({ contentSecurityPolicy: false }));
+  app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: false }));
 
   const corsOrigins = (process.env.CORS_ORIGINS ?? '*').split(',').map((o) => o.trim());
   app.enableCors({ origin: corsOrigins.includes('*') ? true : corsOrigins });
