@@ -23,6 +23,7 @@ COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=build /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=build /app/dist ./dist
 COPY prisma ./prisma
+RUN npx prisma generate
 USER node
 EXPOSE 3000
 
