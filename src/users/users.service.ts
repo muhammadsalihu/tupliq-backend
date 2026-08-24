@@ -76,6 +76,7 @@ export class UsersService {
         ...(patch.role !== undefined ? { role: patch.role } : {}),
         ...(patch.goals !== undefined ? { selectedInterests: patch.goals } : {}),
         ...(patch.aiPreference !== undefined ? { aiPreference: patch.aiPreference } : {}),
+        onboardingComplete: true,
       },
     });
     return this.getProfile(userId);
