@@ -3,7 +3,12 @@ import { ConfigService } from '@nestjs/config';
 import { AIProvider, AiCompletionRequest, AiCompletionResult } from './ai-provider.interface';
 
 const DEFAULT_MODEL = 'gpt-4o-mini';
-const BASE_URL = 'https://api.openai.com/v1/chat/completions';
+const DEFAULT_BASE_URL = 'https://api.openai.com/v1';
+
+function chatCompletionsUrl(): string {
+  // OpenAI-compatible endpoints (e.g. Groq: https://api.groq.com/openai/v1)
+  return `${(process.env.OPENAI_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, '')}/chat/completions`;
+}
 
 @Injectable()
 export class OpenAIProvider implements AIProvider {
@@ -24,7 +29,7 @@ export class OpenAIProvider implements AIProvider {
     if (!apiKey) throw new Error('OPENAI_API_KEY is not configured');
 
     const model = this.defaultModel();
-    const response = await fetch(BASE_URL, {
+    const response = await fetch(chatCompletionsUrl(), {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       signal: request.signal,
