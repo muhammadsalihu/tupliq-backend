@@ -81,6 +81,18 @@ async function main() {
     },
   });
 
+  // Tupliq Agent plan limits (runtime-editable via the plan_limits table).
+  await prisma.planLimit.upsert({
+    where: { tier: 'Free' },
+    update: {},
+    create: { tier: 'Free', monthlyRunLimit: 10 },
+  });
+  await prisma.planLimit.upsert({
+    where: { tier: 'Pro' },
+    update: {},
+    create: { tier: 'Pro', monthlyRunLimit: 200 },
+  });
+
   console.log('Seed complete. Try invite code RACE-4821 for "Circuit Sprint: Campus AI Build".');
 }
 
