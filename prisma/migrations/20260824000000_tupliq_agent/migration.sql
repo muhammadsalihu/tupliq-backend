@@ -20,7 +20,7 @@ CREATE TABLE "plan_limits" (
 
 -- CreateTable
 CREATE TABLE "password_reset_tokens" (
-    "id" UUID NOT NULL,
+    "id" TEXT NOT NULL DEFAULT gen_random_uuid(),
     "userId" TEXT NOT NULL,
     "tokenHash" TEXT NOT NULL,
     "expiresAt" TIMESTAMP(3) NOT NULL,
@@ -32,7 +32,7 @@ CREATE TABLE "password_reset_tokens" (
 
 -- CreateTable
 CREATE TABLE "workflow_runs" (
-    "id" UUID NOT NULL,
+    "id" TEXT NOT NULL DEFAULT gen_random_uuid(),
     "userId" TEXT NOT NULL,
     "workflowKey" TEXT NOT NULL,
     "customWorkflowId" TEXT,
@@ -56,7 +56,7 @@ CREATE TABLE "workflow_runs" (
 
 -- CreateTable
 CREATE TABLE "custom_workflows" (
-    "id" UUID NOT NULL,
+    "id" TEXT NOT NULL DEFAULT gen_random_uuid(),
     "userId" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "description" TEXT NOT NULL DEFAULT '',
@@ -71,7 +71,7 @@ CREATE TABLE "custom_workflows" (
 
 -- CreateTable
 CREATE TABLE "saved_outputs" (
-    "id" UUID NOT NULL,
+    "id" TEXT NOT NULL DEFAULT gen_random_uuid(),
     "userId" TEXT NOT NULL,
     "runId" TEXT,
     "kind" TEXT NOT NULL,
@@ -84,7 +84,7 @@ CREATE TABLE "saved_outputs" (
 
 -- CreateTable
 CREATE TABLE "subscriptions" (
-    "id" UUID NOT NULL,
+    "id" TEXT NOT NULL DEFAULT gen_random_uuid(),
     "userId" TEXT NOT NULL,
     "entitlement" TEXT NOT NULL DEFAULT 'tupliq_pro',
     "productId" TEXT,
