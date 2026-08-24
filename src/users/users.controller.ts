@@ -6,6 +6,7 @@ import { UsersService } from './users.service';
 import { CompleteOnboardingDto } from './dto/complete-onboarding.dto';
 import { UpdateInterestsDto } from './dto/update-interests.dto';
 import { UpdateSettingsDto } from './dto/update-settings.dto';
+import { UpdateAgentProfileDto } from './dto/update-agent-profile.dto';
 
 @ApiTags('users')
 @ApiBearerAuth('bearer')
@@ -17,6 +18,11 @@ export class UsersController {
   @Patch('onboarding')
   completeOnboarding(@CurrentUser() user: RequestUser, @Body() dto: CompleteOnboardingDto) {
     return this.usersService.completeOnboarding(user.id, dto.selectedInterests);
+  }
+
+  @Patch('agent-profile')
+  updateAgentProfile(@CurrentUser() user: RequestUser, @Body() dto: UpdateAgentProfileDto) {
+    return this.usersService.updateAgentProfile(user.id, dto);
   }
 
   @Patch('interests')

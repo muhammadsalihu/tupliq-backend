@@ -11,4 +11,6 @@ export interface UserProfile {
   agentsExplored: string[];
   notificationsOn: boolean;
   darkModeOn: boolean;
+  role: string | null;
+  aiPreference: string;
 }

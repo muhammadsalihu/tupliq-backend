@@ -1,31 +1,28 @@
-import { IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { IsObject, IsOptional, IsString } from 'class-validator';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class RunAgentDto {
-  @ApiProperty({
-    description:
-      'Workflow key: client_followup | proposal_generator | meeting_to_tasks | daily_planner | research_assistant | content_repurposer | general | custom:<uuid>',
-  })
+  /** Explicit workflow key. Omit together with customWorkflowId for auto routing. */
+  @ApiPropertyOptional({ example: 'client_followup' })
+  @IsOptional()
   @IsString()
-  @MaxLength(80)
-  workflowId!: string;
+  workflowKey?: string;
 
-  @ApiProperty({ description: 'Workflow inputs (field name → value).', required: false })
+  /** Run a user-created custom workflow (Pro feature). */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  customWorkflowId?: string;
+
+  /** Free-form natural-language request (required for auto mode). */
+  @ApiPropertyOptional({ example: 'Draft a follow-up for Acme after our pricing call' })
+  @IsOptional()
+  @IsString()
+  request?: string;
+
+  /** Structured field values for the workflow form. */
+  @ApiPropertyOptional({ example: { client_name: 'Acme Ltd', goal: 'Book a call' } })
   @IsOptional()
   @IsObject()
   input?: Record<string, string>;
-
-  @ApiProperty({
-    description: 'Free-form request for natural-language / general mode.',
-    required: false,
-  })
-  @IsOptional()
-  @IsString()
-  @MaxLength(20_000)
-  request?: string;
-
-  @ApiProperty({ enum: ['auto', 'google', 'openai', 'anthropic'], required: false })
-  @IsOptional()
-  @IsString()
-  aiPreference?: string;
 }

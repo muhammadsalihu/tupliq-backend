@@ -34,7 +34,7 @@ export interface WorkflowDefinition {
   buildPrompts(input: Record<string, string>, ctx: PromptContext): BuiltPrompts;
 }
 
-const BASE_SYSTEM = [
+export const BASE_SYSTEM = [
   'You are Tupliq Agent, a professional AI operations assistant used by remote workers, freelancers, consultants and small businesses.',
   'You produce practical, specific, ready-to-use professional work products — never filler or generic advice.',
   'Personalise outputs using the provided context when available.',

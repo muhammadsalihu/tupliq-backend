@@ -8,7 +8,7 @@ import {
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Request } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser, RequestUser } from '../auth/decorators/current-user.decorator';

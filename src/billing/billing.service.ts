@@ -82,7 +82,7 @@ export class BillingService {
 
     const expiresAt = event.expiration_at_ms ? new Date(event.expiration_at_ms) : null;
 
-    let active = true;
+    let active: boolean | undefined = true;
     let willRenew = true;
     switch (event.type) {
       case 'INITIAL_PURCHASE':
@@ -111,7 +111,13 @@ export class BillingService {
         break;
     }
 
-    const data = {
+    const data: {
+      productId: string | null;
+      store: string | null;
+      willRenew: boolean;
+      expiresAt: Date | null;
+      lastEvent: object;
+    } = {
       productId: event.product_id ?? null,
       store: event.store ?? null,
       willRenew,

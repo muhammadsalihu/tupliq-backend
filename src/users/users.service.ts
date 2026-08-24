@@ -30,6 +30,8 @@ export class UsersService {
       agentsExplored: user.agentsExplored,
       notificationsOn: user.notificationsOn,
       darkModeOn: user.darkModeOn,
+      role: user.role,
+      aiPreference: user.aiPreference,
     };
   }
 
@@ -56,6 +58,25 @@ export class UsersService {
     await this.prisma.user.update({
       where: { id: userId },
       data: settings,
+    });
+    return this.getProfile(userId);
+  }
+
+  /**
+   * Tupliq Agent onboarding/profile: role, goals (stored in
+   * selectedInterests) and preferred AI provider.
+   */
+  async updateAgentProfile(
+    userId: string,
+    patch: { role?: string; goals?: string[]; aiPreference?: string },
+  ): Promise<UserProfile> {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        ...(patch.role !== undefined ? { role: patch.role } : {}),
+        ...(patch.goals !== undefined ? { selectedInterests: patch.goals } : {}),
+        ...(patch.aiPreference !== undefined ? { aiPreference: patch.aiPreference } : {}),
+      },
     });
     return this.getProfile(userId);
   }
