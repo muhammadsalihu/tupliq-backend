@@ -12,6 +12,26 @@ enum HackathonTag {
   Upcoming
 }
 
+enum WorkflowRunStatus {
+  Running
+  Succeeded
+  Failed
+}
+
+enum PlanTier {
+  Free
+  Pro
+}
+
+// Configurable monthly quota per plan tier. Edit the rows to change limits
+// without a redeploy (env vars provide fallbacks when a row is missing).
+model PlanLimit {
+  tier            PlanTier @id
+  monthlyRunLimit Int
+
+  @@map("plan_limits")
+}
+
 model User {
   id                 String   @id @default(uuid())
   name               String
@@ -22,14 +42,123 @@ model User {
   agentsExplored     String[] @default([]) // agent ids: "claude" | "chatgpt" | "gemini"
   notificationsOn    Boolean  @default(true)
   darkModeOn         Boolean  @default(false)
+  // Tupliq Agent profile
+  role               String? // remote_worker | freelancer | consultant | founder | small_business_owner | other
+  aiPreference       String   @default("auto") // auto | google | openai | anthropic
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
   joinedHackathons  HackathonParticipant[]
   completedLessons  LessonCompletion[]
   redeemedCodes     InviteCode[]
+  workflowRuns      WorkflowRun[]
+  customWorkflows   CustomWorkflow[]
+  savedOutputs      SavedOutput[]
+  resetTokens       PasswordResetToken[]
+  subscriptions     Subscription[]
 
   @@map("users")
+}
+
+// One-time hashed token for the forgot/reset password flow.
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+// A single agent execution (one quota unit when it succeeds).
+model WorkflowRun {
+  id              String           @id @default(uuid())
+  userId          String
+  workflowKey     String // client_followup | proposal_generator | meeting_to_tasks | daily_planner | research_assistant | content_repurposer | general | custom:<uuid>
+  customWorkflowId String?
+  title           String // short human label shown in history
+  request         String // natural-language request or input summary
+  input           Json
+  result          Json?
+  error           String?
+  steps           Json? // [{key,label,detail?,startedAt,durationMs}]
+  provider        String? // gemini | openai | anthropic
+  model           String?
+  status          WorkflowRunStatus @default(Running)
+  durationMs      Int?
+  consumesQuota   Boolean @default(true) // refunded (false) on provider/server failure
+  billingPeriod   DateTime // first day of the month this run counts against
+  createdAt       DateTime @default(now())
+  completedAt     DateTime?
+
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  customWorkflow  CustomWorkflow? @relation(fields: [customWorkflowId], references: [id], onDelete: SetNull)
+  savedOutputs    SavedOutput[]
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([userId, billingPeriod, consumesQuota])
+  @@map("workflow_runs")
+}
+
+// Pro feature: lightweight reusable workflow defined by the user.
+model CustomWorkflow {
+  id           String   @id @default(uuid())
+  userId       String
+  name         String
+  description  String   @default("")
+  inputFields  Json // [{name,label,type,required,options?,placeholder?}]
+  instructions String
+  aiPreference String   @default("auto") // auto | google | openai | anthropic
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  runs WorkflowRun[]
+
+  @@index([userId, updatedAt(sort: Desc)])
+  @@map("custom_workflows")
+}
+
+// Output the user explicitly saved from a run.
+model SavedOutput {
+  id        String   @id @default(uuid())
+  userId    String
+  runId     String?
+  kind      String // workflow key
+  title     String
+  content   Json
+  createdAt DateTime @default(now())
+
+  user User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  run  WorkflowRun? @relation(fields: [runId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("saved_outputs")
+}
+
+// Server-side entitlement truth, written ONLY by the RevenueCat webhook.
+// Client-purchased state is never trusted for protected operations.
+model Subscription {
+  id          String    @id @default(uuid())
+  userId      String
+  entitlement String    @default("tupliq_pro")
+  productId   String?
+  store       String? // app_store | play_store | stripe | promo
+  active      Boolean   @default(false)
+  willRenew   Boolean   @default(true)
+  expiresAt   DateTime?
+  lastEvent   Json?
+  updatedAt   DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, entitlement])
+  @@map("subscriptions")
 }
 
 model Hackathon {
