@@ -24,7 +24,7 @@ export class BillingService {
     private readonly config: ConfigService,
   ) {}
 
-  /** True when the user currently holds an active tupliq_pro entitlement. */
+  /** True when the user currently holds an active Tupliq Pro entitlement. */
   async isPro(userId: string): Promise<boolean> {
     const subscription = await this.prisma.subscription.findUnique({
       where: { userId_entitlement: { userId, entitlement: this.entitlement() } },
@@ -140,7 +140,7 @@ export class BillingService {
   }
 
   private entitlement(): string {
-    return this.config.get<string>('REVENUECAT_ENTITLEMENT', 'tupliq_pro');
+    return this.config.get<string>('REVENUECAT_ENTITLEMENT', 'tupliq_agent_pro');
   }
 }
 
