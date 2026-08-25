@@ -30,13 +30,11 @@ ${renderUserInput(input)}
 
 Return JSON with exactly this shape:
 {
-${jsonShape({
-  linkedin_post: 'LinkedIn post, platform-native formatting',
-  x_post: 'X/Twitter post, max 280 characters',
-  short_post: 'short Instagram/Facebook-style post',
-  hooks: 'array of 3-6 alternative opening hook lines',
-  ctas: 'array of 2-4 call-to-action options',
-})}
+  "linkedin_post": "LinkedIn post text with platform-native formatting",
+  "x_post": "X/Twitter post text, max 280 characters",
+  "short_post": "short Instagram/Facebook-style post text",
+  "hooks": ["hook line 1", "hook line 2", "hook line 3"],
+  "ctas": ["call to action 1", "call to action 2"]
 }`,
     };
   },
