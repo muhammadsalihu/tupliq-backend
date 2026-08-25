@@ -11,6 +11,7 @@ import { BillingModule } from './billing/billing.module';
 import { CustomWorkflowsModule } from './workflows/custom-workflows.module';
 import { RunsModule } from './runs/runs.module';
 import { SavedOutputsModule } from './saved-outputs/saved-outputs.module';
+import { PushModule } from './push/push.module';
 import { HealthController } from './health/health.controller';
 
 @Module({
@@ -27,6 +28,7 @@ import { HealthController } from './health/health.controller';
     CustomWorkflowsModule,
     RunsModule,
     SavedOutputsModule,
+    PushModule,
   ],
   controllers: [HealthController],
 })
