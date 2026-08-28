@@ -147,7 +147,7 @@ model SavedOutput {
 model Subscription {
   id          String    @id @default(uuid())
   userId      String
-  entitlement String    @default("tupliq_pro")
+  entitlement String    @default("tupliq-pro")
   productId   String?
   store       String? // app_store | play_store | stripe | promo
   active      Boolean   @default(false)

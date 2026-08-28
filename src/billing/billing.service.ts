@@ -140,7 +140,7 @@ export class BillingService {
   }
 
   private entitlement(): string {
-    return this.config.get<string>('REVENUECAT_ENTITLEMENT', 'tupliq_agent_pro');
+    return this.config.get<string>('REVENUECAT_ENTITLEMENT', 'tupliq-pro');
   }
 }
 
