@@ -6,6 +6,8 @@ export interface AiCompletionRequest {
   temperature?: number;
   maxTokens?: number;
   signal?: AbortSignal;
+  /** Preserved across provider attempts for OpenCode Go session routing. */
+  sessionId?: string;
 }
 
 export interface AiCompletionResult {

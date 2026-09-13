@@ -31,7 +31,11 @@ export class OpenAIProvider implements AIProvider {
     const model = this.defaultModel();
     const response = await fetch(chatCompletionsUrl(), {
       method: 'POST',
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        ...(request.sessionId ? { 'x-opencode-session': request.sessionId } : {}),
+      },
       signal: request.signal,
       body: JSON.stringify({
         model,

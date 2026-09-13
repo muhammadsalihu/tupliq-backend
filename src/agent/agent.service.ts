@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import {
   BadRequestException,
   ForbiddenException,
@@ -99,6 +100,7 @@ export class AgentService {
    */
   async runStream(dto: RunAgentDto, user: RequestUser, send: SseSend): Promise<void> {
     const startedAt = Date.now();
+    const providerSessionId = randomUUID();
     const steps = new StepRecorder();
 
     try {
@@ -196,6 +198,7 @@ export class AgentService {
           inputs,
           { userName: profile.name, role: profile.role },
           preference,
+          providerSessionId,
           send,
         );
       } catch (error) {
@@ -253,6 +256,7 @@ export class AgentService {
     inputs: Record<string, string>,
     ctx: { userName?: string | null; role?: string | null },
     preference: string,
+    sessionId: string,
     send: SseSend,
   ): Promise<{ parsed: unknown; provider: string; model: string }> {
     const prompts = definition.buildPrompts(inputs, ctx);
@@ -276,6 +280,7 @@ export class AgentService {
           user: userPrompt,
           temperature: 0.7,
           maxTokens: 4096,
+          sessionId,
           signal: AbortSignal.timeout(AI_TIMEOUT_MS),
         },
         preference,
