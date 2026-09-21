@@ -4,10 +4,11 @@ export interface UserProfile {
   id: string;
   name: string;
   email: string;
+  emailVerified: boolean;
   onboardingComplete: boolean;
   selectedInterests: string[];
   joinedHackathonIds: string[];
-  completedLessonKeys: string[]; // `${hackathonId}-${lessonId}`
+  completedLessonKeys: string[];
   agentsExplored: string[];
   notificationsOn: boolean;
   darkModeOn: boolean;

@@ -20,11 +20,50 @@ interface SendGenericWelcomeEmailParams {
   name: string;
 }
 
+interface SendVerificationEmailParams {
+  to: string;
+  name: string;
+  verifyUrl: string;
+  token: string;
+}
+
 @Injectable()
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
 
   constructor(private readonly config: ConfigService) {}
+
+  async sendVerificationEmail(params: SendVerificationEmailParams): Promise<void> {
+    const apiKey = this.config.get<string>('RESEND_API_KEY');
+    if (!apiKey) {
+      this.logger.warn('RESEND_API_KEY is not set. Skipping verification email.');
+      return;
+    }
+
+    const from = this.config.get<string>('WELCOME_EMAIL_FROM', 'Tupliq <onboarding@resend.dev>');
+    const appName = this.config.get<string>('APP_NAME', 'Tupliq');
+    const subject = `Verify your ${appName} email`;
+
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from,
+        to: params.to,
+        subject,
+        html: this.buildVerificationHtml(params, appName),
+        text: this.buildVerificationText(params, appName),
+      }),
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`Resend email failed with ${response.status}: ${body}`);
+    }
+  }
 
   async sendGenericWelcomeEmail(params: SendGenericWelcomeEmailParams): Promise<void> {
     const apiKey = this.config.get<string>('RESEND_API_KEY');
@@ -200,6 +239,38 @@ export class EmailService {
           <a href="${appUrl}" style="background:#4F46E5;color:#ffffff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:bold;">Get Started</a>
         </p>
         <p>If you have any questions, just reply to this email.</p>
+      </div>
+    `;
+  }
+
+  private buildVerificationText(params: SendVerificationEmailParams, appName: string): string {
+    return [
+      `Hi ${params.name},`,
+      '',
+      `Please verify your email address to complete your ${appName} registration.`,
+      '',
+      `Verify your email: ${params.verifyUrl}`,
+      '',
+      `Or paste this code into the app: ${params.token}`,
+      '',
+      'This link expires in 24 hours.',
+    ].join('\n');
+  }
+
+  private buildVerificationHtml(params: SendVerificationEmailParams, appName: string): string {
+    return `
+      <div style="font-family: Arial, sans-serif; color: #111827; line-height: 1.6;">
+        <h1 style="font-size: 24px; margin-bottom: 12px;">Verify your ${this.escapeHtml(appName)} email</h1>
+        <p>Hi ${this.escapeHtml(params.name)},</p>
+        <p>Please verify your email address to complete your registration.</p>
+        <p style="margin: 24px 0;">
+          <a href="${params.verifyUrl}" style="background:#4F46E5;color:#ffffff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:bold;">Verify Email</a>
+        </p>
+        <p>If the button does not work, paste this code into the app:</p>
+        <p style="font-family: monospace; font-size: 14px; word-break: break-all; background:#F3F4F6; padding:10px; border-radius:6px;">
+          ${this.escapeHtml(params.token)}
+        </p>
+        <p>This link expires in 24 hours.</p>
       </div>
     `;
   }

@@ -21,6 +21,7 @@ export class UsersService {
       id: user.id,
       name: user.name,
       email: user.email,
+      emailVerified: user.emailVerified,
       onboardingComplete: user.onboardingComplete,
       selectedInterests: user.selectedInterests,
       joinedHackathonIds: user.joinedHackathons.map((h) => h.hackathonId),
