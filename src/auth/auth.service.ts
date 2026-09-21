@@ -3,7 +3,6 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { createHash, randomBytes } from 'crypto';
-import { OAuth2Client } from 'google-auth-library';
 import { EmailService } from '../email/email.service';
 import { InviteCodesService } from '../invite-codes/invite-codes.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -24,7 +23,6 @@ export interface AuthResult {
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
-  private readonly googleClient: OAuth2Client;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -33,10 +31,7 @@ export class AuthService {
     private readonly inviteCodesService: InviteCodesService,
     private readonly emailService: EmailService,
     private readonly config: ConfigService,
-  ) {
-    const clientId = this.config.get<string>('GOOGLE_CLIENT_ID', '');
-    this.googleClient = clientId ? new OAuth2Client(clientId) : null as any;
-  }
+  ) {}
 
   async register(name: string, email: string, password: string): Promise<AuthResult> {
     const existing = await this.prisma.user.findUnique({ where: { email } });
@@ -67,86 +62,10 @@ export class AuthService {
     return this.buildAuthResult(user.id, user.email);
   }
 
-  async googleAuth(idToken: string): Promise<AuthResult> {
-    const clientId = this.config.get<string>('GOOGLE_CLIENT_ID');
-    if (!clientId) {
-      throw new BadRequestException('Google Sign-In is not configured.');
-    }
-
-    let payload: { sub: string; email: string; name?: string; picture?: string };
-    try {
-      const ticket = await this.googleClient.verifyIdToken({
-        idToken,
-        audience: clientId,
-      });
-      payload = ticket.getPayload() as any;
-    } catch (error: any) {
-      this.logger.warn(`Google ID token verification failed: ${error.message}`);
-      throw new UnauthorizedException('Invalid Google sign-in token.');
-    }
-
-    if (!payload?.email) {
-      throw new UnauthorizedException('Google account did not provide an email.');
-    }
-
-    const email = payload.email.toLowerCase();
-    let user = await this.prisma.user.findUnique({ where: { email } });
-
-    if (user) {
-      // Link Google ID if not already linked
-      if (!user.googleId) {
-        await this.prisma.user.update({
-          where: { id: user.id },
-          data: { googleId: payload.sub },
-        });
-      }
-    } else {
-      // Create new user
-      user = await this.prisma.user.create({
-        data: {
-          name: payload.name || email.split('@')[0],
-          email,
-          googleId: payload.sub,
-          emailVerified: true, // Google already verified the email
-        },
-      });
-      await this.sendWelcomeInvite(user.name, user.email);
-    }
-
-    return this.buildAuthResult(user.id, user.email);
-  }
-
-  async verifyEmail(token: string): Promise<{ ok: true }> {
-    const record = await this.prisma.emailVerificationToken.findUnique({
-      where: { tokenHash: sha256(token) },
-    });
-
-    if (!record || record.usedAt || record.expiresAt.getTime() < Date.now()) {
-      throw new BadRequestException('This verification link is invalid or has expired.');
-    }
-
-    await this.prisma.$transaction([
-      this.prisma.user.update({
-        where: { id: record.userId },
-        data: { emailVerified: true },
-      }),
-      this.prisma.emailVerificationToken.update({
-        where: { id: record.id },
-        data: { usedAt: new Date() },
-      }),
-    ]);
-
-    return { ok: true };
-  }
-
-  async resendVerification(email: string): Promise<{ ok: true }> {
-    const user = await this.prisma.user.findUnique({ where: { email: email.trim().toLowerCase() } });
-    if (!user || user.emailVerified) return { ok: true };
-
-    await this.sendVerificationEmail(user.id, user.email, user.name);
-    return { ok: true };
-  }
-
+  /**
+   * Creates a single-use, one-hour reset token and emails it. Always
+   * succeeds from the caller's perspective (no account enumeration).
+   */
   async requestPasswordReset(email: string): Promise<{ ok: true }> {
     const normalized = email.trim().toLowerCase();
     const user = await this.prisma.user.findUnique({ where: { email: normalized } });
@@ -182,6 +101,7 @@ export class AuthService {
     return { ok: true };
   }
 
+  /** Consumes a valid reset token and sets the new password. */
   async resetPassword(token: string, newPassword: string): Promise<{ ok: true }> {
     const record = await this.prisma.passwordResetToken.findUnique({
       where: { tokenHash: sha256(token) },
@@ -200,6 +120,37 @@ export class AuthService {
       }),
     ]);
 
+    return { ok: true };
+  }
+
+  async verifyEmail(token: string): Promise<{ ok: true }> {
+    const record = await this.prisma.emailVerificationToken.findUnique({
+      where: { tokenHash: sha256(token) },
+    });
+
+    if (!record || record.usedAt || record.expiresAt.getTime() < Date.now()) {
+      throw new BadRequestException('This verification link is invalid or has expired.');
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: record.userId },
+        data: { emailVerified: true },
+      }),
+      this.prisma.emailVerificationToken.update({
+        where: { id: record.id },
+        data: { usedAt: new Date() },
+      }),
+    ]);
+
+    return { ok: true };
+  }
+
+  async resendVerification(email: string): Promise<{ ok: true }> {
+    const user = await this.prisma.user.findUnique({ where: { email: email.trim().toLowerCase() } });
+    if (!user || user.emailVerified) return { ok: true };
+
+    await this.sendVerificationEmail(user.id, user.email, user.name);
     return { ok: true };
   }
 
@@ -245,7 +196,7 @@ export class AuthService {
         data: {
           userId,
           tokenHash: sha256(token),
-          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
         },
       });
 

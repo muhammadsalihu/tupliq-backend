@@ -5,7 +5,6 @@ import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
-import { GoogleAuthDto } from './dto/google-auth.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { CurrentUser, RequestUser } from './decorators/current-user.decorator';
 import { UsersService } from '../users/users.service';
@@ -41,11 +40,6 @@ export class AuthController {
   @Post('login')
   login(@Body() dto: LoginDto) {
     return this.authService.login(dto.email, dto.password);
-  }
-
-  @Post('google')
-  googleAuth(@Body() dto: GoogleAuthDto) {
-    return this.authService.googleAuth(dto.idToken);
   }
 
   @Post('forgot-password')

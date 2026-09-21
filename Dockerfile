@@ -1,24 +1,24 @@
 # ---- Install deps + generate Prisma client ----
-FROM node:20-alpine AS deps
+FROM node:22-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY prisma ./prisma
-RUN npm ci
+RUN npm ci --ignore-scripts
+RUN npx prisma generate
 
 # ---- Build ----
 FROM deps AS build
-RUN npx prisma generate
 COPY tsconfig.json nest-cli.json ./
 COPY src ./src
 RUN npm run build
 
 # ---- Runtime ----
-FROM node:20-alpine AS runtime
-RUN apk add --no-cache openssl
+FROM node:22-alpine AS runtime
+RUN apk add --no-cache openssl python3 make g++
 WORKDIR /app
 ENV NODE_ENV=production
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
+RUN npm ci --ignore-scripts && npm cache clean --force
 RUN npm rebuild bcrypt
 COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=build /app/node_modules/@prisma ./node_modules/@prisma
