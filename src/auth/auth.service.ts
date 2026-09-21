@@ -133,7 +133,10 @@ export class AuthService {
       );
 
       if (!invite) {
-        this.logger.warn('No hackathon exists. Skipping welcome invite email.');
+        // No hackathon exists — send a generic welcome email instead
+        const appUrl = this.config.get<string>('APP_URL', 'https://www.tupliq.com');
+        await this.emailService.sendGenericWelcomeEmail({ to: email, name });
+        this.logger.log(`Sent generic welcome email to ${email} (no hackathon configured)`);
         return;
       }
 
