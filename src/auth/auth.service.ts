@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { createHash, randomBytes } from 'crypto';
+import { OAuth2Client } from 'google-auth-library';
 import { EmailService } from '../email/email.service';
 import { InviteCodesService } from '../invite-codes/invite-codes.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -23,6 +24,7 @@ export interface AuthResult {
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
+  private readonly googleClient: OAuth2Client | null;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -31,7 +33,10 @@ export class AuthService {
     private readonly inviteCodesService: InviteCodesService,
     private readonly emailService: EmailService,
     private readonly config: ConfigService,
-  ) {}
+  ) {
+    const clientId = this.config.get<string>('GOOGLE_CLIENT_ID', '');
+    this.googleClient = clientId ? new OAuth2Client(clientId) : null;
+  }
 
   async register(name: string, email: string, password: string): Promise<AuthResult> {
     const existing = await this.prisma.user.findUnique({ where: { email } });
@@ -58,6 +63,52 @@ export class AuthService {
 
     const valid = await bcrypt.compare(password, user.passwordHash);
     if (!valid) throw new UnauthorizedException('Incorrect email or password.');
+
+    return this.buildAuthResult(user.id, user.email);
+  }
+
+  async googleAuth(idToken: string): Promise<AuthResult> {
+    if (!this.googleClient) {
+      throw new BadRequestException('Google Sign-In is not configured.');
+    }
+
+    let payload: { sub: string; email: string; name?: string };
+    try {
+      const ticket = await this.googleClient.verifyIdToken({
+        idToken,
+        audience: this.config.get<string>('GOOGLE_CLIENT_ID'),
+      });
+      payload = ticket.getPayload() as any;
+    } catch (error: any) {
+      this.logger.warn(`Google ID token verification failed: ${error.message}`);
+      throw new UnauthorizedException('Invalid Google sign-in token.');
+    }
+
+    if (!payload?.email) {
+      throw new UnauthorizedException('Google account did not provide an email.');
+    }
+
+    const email = payload.email.toLowerCase();
+    let user = await this.prisma.user.findUnique({ where: { email } });
+
+    if (user) {
+      if (!user.googleId) {
+        await this.prisma.user.update({
+          where: { id: user.id },
+          data: { googleId: payload.sub },
+        });
+      }
+    } else {
+      user = await this.prisma.user.create({
+        data: {
+          name: payload.name || email.split('@')[0],
+          email,
+          googleId: payload.sub,
+          emailVerified: true,
+        },
+      });
+      await this.sendWelcomeInvite(user.name, user.email);
+    }
 
     return this.buildAuthResult(user.id, user.email);
   }
