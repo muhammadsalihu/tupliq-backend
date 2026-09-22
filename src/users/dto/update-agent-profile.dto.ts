@@ -4,7 +4,7 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 export class UpdateAgentProfileDto {
   @ApiPropertyOptional({ example: 'freelancer' })
   @IsOptional()
-  @IsIn(['remote_worker', 'freelancer', 'consultant', 'founder', 'small_business_owner', 'other'])
+  @IsIn(['remote_worker', 'remote', 'freelancer', 'consultant', 'founder', 'small_business_owner', 'smallbiz', 'other'])
   role?: string;
 
   @ApiPropertyOptional({ type: [String] })

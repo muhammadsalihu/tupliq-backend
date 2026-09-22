@@ -80,11 +80,18 @@ export class AuthService {
       });
       payload = ticket.getPayload() as any;
     } catch (error: any) {
-      this.logger.warn(`Google ID token verification failed: ${error.message}`);
+      const audience = this.config.get<string>('GOOGLE_CLIENT_ID');
+      // Most real-world failures here are an audience mismatch (the idToken was
+      // minted for a different client ID) or an expired/wrong token. Log both
+      // sides so the cause is visible without reproducing locally.
+      this.logger.warn(
+        `Google ID token verification failed — expected audience ${audience ?? 'UNSET'}, reason: ${error.message}`,
+      );
       throw new UnauthorizedException('Invalid Google sign-in token.');
     }
 
     if (!payload?.email) {
+      this.logger.warn(`Google sign-in rejected: token had no email claim`);
       throw new UnauthorizedException('Google account did not provide an email.');
     }
 
@@ -110,6 +117,9 @@ export class AuthService {
       await this.sendWelcomeInvite(user.name, user.email);
     }
 
+    this.logger.log(
+      `Google sign-in ok: ${email} (${user ? 'existing account' : 'new account'})`,
+    );
     return this.buildAuthResult(user.id, user.email);
   }
 

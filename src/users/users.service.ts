@@ -71,10 +71,17 @@ export class UsersService {
     userId: string,
     patch: { role?: string; goals?: string[]; aiPreference?: string },
   ): Promise<UserProfile> {
+    // Normalize role aliases (mobile app sends old values)
+    const roleMap: Record<string, string> = {
+      remote: 'remote_worker',
+      smallbiz: 'small_business_owner',
+    };
+    const normalizedRole = patch.role ? (roleMap[patch.role] || patch.role) : undefined;
+
     await this.prisma.user.update({
       where: { id: userId },
       data: {
-        ...(patch.role !== undefined ? { role: patch.role } : {}),
+        ...(normalizedRole !== undefined ? { role: normalizedRole } : {}),
         ...(patch.goals !== undefined ? { selectedInterests: patch.goals } : {}),
         ...(patch.aiPreference !== undefined ? { aiPreference: patch.aiPreference } : {}),
         onboardingComplete: true,
