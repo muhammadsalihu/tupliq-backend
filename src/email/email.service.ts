@@ -196,6 +196,63 @@ export class EmailService {
     });
   }
 
+  /**
+   * Internal heads-up when someone joins the Agent waitlist, so a demo can be
+   * booked while the interest is warm. Goes to WAITLIST_NOTIFY_EMAIL (the owner),
+   * and quotes the visitor's address so replying is one click.
+   */
+  async sendWaitlistNotification(params: {
+    email: string;
+    name?: string | null;
+    goal?: string | null;
+    source?: string | null;
+  }): Promise<void> {
+    const to = this.config.get<string>(
+      'WAITLIST_NOTIFY_EMAIL',
+      'muhammad@airbills.ng',
+    );
+    const esc = (value?: string | null) =>
+      this.escapeHtml(value?.trim() ? value.trim() : '—');
+
+    const rows: Array<[string, string]> = [
+      ['Email', params.email],
+      ['Name', params.name ?? '—'],
+      ['Wants the agent to', params.goal ?? '—'],
+      ['Source', params.source ?? 'agent-page'],
+    ];
+    const rowHtml = rows
+      .map(
+        ([label, value]) =>
+          `<tr><td style="padding:6px 12px 6px 0;color:${BRAND.muted};white-space:nowrap">${label}</td>` +
+          `<td style="padding:6px 0;color:${BRAND.ink}"><strong>${esc(value)}</strong></td></tr>`,
+      )
+      .join('');
+
+    await this.send({
+      to,
+      subject: `New agent waitlist signup: ${params.email}`,
+      html: this.layout({
+        appName: this.appName(),
+        appUrl: this.appUrl(),
+        preheader: `${params.email} asked for early access to the ${this.appName()} app.`,
+        heading: 'New waitlist signup',
+        intro: `Someone asked for early access to the ${this.escapeHtml(
+          this.appName(),
+        )} Android app. Reply to this message to reach them and book a demo.`,
+        bodyHtml: `<table role="presentation" style="width:100%;border-collapse:collapse;font-size:14px">${rowHtml}</table>`,
+        cta: { label: 'Open the agent page', url: `${this.appUrl()}/agent` },
+        outro: 'Sent by the waitlist endpoint on tupliq.com/agent.',
+      }),
+      text: [
+        'New waitlist signup',
+        `Email: ${params.email}`,
+        `Name: ${params.name ?? '—'}`,
+        `Wants the agent to: ${params.goal ?? '—'}`,
+        `Source: ${params.source ?? 'agent-page'}`,
+      ].join('\n'),
+    });
+  }
+
   // ── sending ────────────────────────────────────────────────────────────────
 
   private appName(): string {

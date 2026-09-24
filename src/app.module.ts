@@ -13,6 +13,7 @@ import { RunsModule } from './runs/runs.module';
 import { SavedOutputsModule } from './saved-outputs/saved-outputs.module';
 import { PushModule } from './push/push.module';
 import { CloudAgentModule } from './cloud-agent/cloud-agent.module';
+import { WaitlistModule } from './waitlist/waitlist.module';
 import { HealthController } from './health/health.controller';
 import { RequestLoggerMiddleware } from './common/request-logger.middleware';
 
@@ -32,6 +33,7 @@ import { RequestLoggerMiddleware } from './common/request-logger.middleware';
     SavedOutputsModule,
     PushModule,
     CloudAgentModule,
+    WaitlistModule,
   ],
   controllers: [HealthController],
 })

@@ -310,3 +310,17 @@ model UserInstance {
   @@index([userId])
   @@map("user_instances")
 }
+
+// Interest list for the Tupliq Agent Android app (closed testing). Captured by
+// tupliq.com/agent; read through the admin endpoint to book demos.
+model AgentWaitlistEntry {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String?
+  goal      String? // what they want the agent to do — qualifies the demo call
+  source    String   @default("agent-page")
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@map("agent_waitlist_entries")
+}
