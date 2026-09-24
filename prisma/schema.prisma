@@ -61,6 +61,8 @@ model User {
   pushTokens        PushToken[]
   verificationTokens EmailVerificationToken[]
 
+  instances       UserInstance[]
+
   @@map("users")
 }
 
@@ -290,4 +292,35 @@ model EmailVerificationToken {
 
   @@index([userId])
   @@map("email_verification_tokens")
+}
+
+// Cloud agent instance backed by Agent37
+model UserInstance {
+  id          String   @id @default(uuid())
+  userId      String   @unique
+  instanceId  String   @unique // Agent37 instance ID
+  instanceUrl String   // https://<id>.agent37.app
+  status      String   @default("running") // running | sleeping | stopped | deleted
+  template    String   @default("agent37-hermes")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("user_instances")
+}
+
+// Interest list for the Tupliq Agent Android app (closed testing). Captured by
+// tupliq.com/agent; read through the admin endpoint to book demos.
+model AgentWaitlistEntry {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String?
+  goal      String? // what they want the agent to do — qualifies the demo call
+  source    String   @default("agent-page")
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@map("agent_waitlist_entries")
 }
