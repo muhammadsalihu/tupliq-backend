@@ -61,7 +61,8 @@ model User {
   pushTokens        PushToken[]
   verificationTokens EmailVerificationToken[]
 
-  instances       UserInstance[]
+  instances UserInstance[]
+  bots      Bot[]
 
   @@map("users")
 }
@@ -85,20 +86,20 @@ model PasswordResetToken {
 model WorkflowRun {
   id              String           @id @default(uuid())
   userId          String
-  workflowKey     String // client_followup | proposal_generator | meeting_to_tasks | daily_planner | research_assistant | content_repurposer | general | custom:<uuid>
+  workflowKey     String
   customWorkflowId String?
-  title           String // short human label shown in history
-  request         String // natural-language request or input summary
+  title           String
+  request         String
   input           Json
   result          Json?
   error           String?
-  steps           Json? // [{key,label,detail?,startedAt,durationMs}]
-  provider        String? // gemini | openai | anthropic
+  steps           Json?
+  provider        String?
   model           String?
   status          WorkflowRunStatus @default(Running)
   durationMs      Int?
-  consumesQuota   Boolean @default(true) // refunded (false) on provider/server failure
-  billingPeriod   DateTime // first day of the month this run counts against
+  consumesQuota   Boolean @default(true)
+  billingPeriod   DateTime
   createdAt       DateTime @default(now())
   completedAt     DateTime?
 
@@ -117,9 +118,9 @@ model CustomWorkflow {
   userId       String
   name         String
   description  String   @default("")
-  inputFields  Json // [{name,label,type,required,options?,placeholder?}]
+  inputFields  Json
   instructions String
-  aiPreference String   @default("auto") // auto | google | openai | anthropic
+  aiPreference String   @default("auto")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -135,7 +136,7 @@ model SavedOutput {
   id        String   @id @default(uuid())
   userId    String
   runId     String?
-  kind      String // workflow key
+  kind      String
   title     String
   content   Json
   createdAt DateTime @default(now())
@@ -148,13 +149,12 @@ model SavedOutput {
 }
 
 // Server-side entitlement truth, written ONLY by the RevenueCat webhook.
-// Client-purchased state is never trusted for protected operations.
 model Subscription {
   id          String    @id @default(uuid())
   userId      String
   entitlement String    @default("tupliq-pro")
   productId   String?
-  store       String? // app_store | play_store | stripe | promo
+  store       String?
   active      Boolean   @default(false)
   willRenew   Boolean   @default(true)
   expiresAt   DateTime?
@@ -202,7 +202,7 @@ model Video {
   id          String @id @default(uuid())
   hackathonId String
   title       String
-  duration    String // display string, e.g. "6:12"
+  duration    String
   position    Int    @default(0)
 
   hackathon Hackathon @relation(fields: [hackathonId], references: [id], onDelete: Cascade)
@@ -250,7 +250,6 @@ model LessonCompletion {
 }
 
 // One row per invite code emailed to a student for a specific hackathon.
-// Doc-ID-as-code pattern from Firestore, kept as the primary key here too.
 model InviteCode {
   code         String    @id
   hackathonId  String
@@ -271,7 +270,7 @@ model PushToken {
   id        String   @id @default(uuid())
   userId    String
   token     String   @unique
-  platform  String   @default("android") // android | ios
+  platform  String   @default("android")
   createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -302,10 +301,12 @@ model UserInstance {
   instanceUrl String   // https://<id>.agent37.app
   status      String   @default("running") // running | sleeping | stopped | deleted
   template    String   @default("agent37-hermes")
+  notifyToken String?  @unique // token for Bot→user proactive messages (Grok Bot)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  connections InstanceConnection[]
 
   @@index([userId])
   @@map("user_instances")
@@ -317,10 +318,50 @@ model AgentWaitlistEntry {
   id        String   @id @default(uuid())
   email     String   @unique
   name      String?
-  goal      String? // what they want the agent to do — qualifies the demo call
+  goal      String?
   source    String   @default("agent-page")
   createdAt DateTime @default(now())
 
   @@index([createdAt])
   @@map("agent_waitlist_entries")
+}
+
+// Named AI Bot on a user's cloud agent instance (Grok Bot feature).
+// Each Bot is a persona that shares one Agent37 instance with other Bots,
+// with its own sessions, notes file, and routines.
+model Bot {
+  id             String   @id @default(uuid())
+  userId         String
+  handle         String   // unique per-user slug: "scout", "chief", "inbox"
+  name           String   // display name: "Scout"
+  title          String   // role title: "Research Lead"
+  description    String   @default("") // job description / system prompt
+  color          String   @default("#4F46E5") // accent color hex
+  avatar         String?  // emoji or icon character
+  sessions       Json     @default("[]") // [{id, label}] — per-Bot chat sessions
+  groupSessionId String?  // team-chat session for this Bot
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, handle])
+  @@index([userId])
+  @@map("bots")
+}
+
+// Connected tool integration on a cloud agent instance (Grok Bot feature).
+model InstanceConnection {
+  id         String   @id @default(uuid())
+  instanceId String   // UserInstance.id
+  toolkit    String   // "gmail", "slack", "github", etc.
+  account    String?  // connected account email/name
+  status     String   @default("pending") // pending | active | expired | error
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  instance UserInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@unique([instanceId, toolkit])
+  @@map("instance_connections")
 }
