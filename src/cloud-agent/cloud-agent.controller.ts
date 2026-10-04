@@ -129,7 +129,19 @@ export class CloudAgentController {
     try {
       const result = await this.cloudAgent.sendBotMessageStream(user.id, id, input, sessionId, send, model);
       send('done', { sessionId: result.sessionId });
-    } catch (err: any) { send('error', { message: err?.message ?? 'Stream failed' }); }
+    } catch (err: any) {
+      // A refused turn (one turn per session) is a normal condition, not a
+      // crash — send it as a typed event so the client can offer a retry
+      // instead of showing the raw upstream sentence.
+      const isBusy = err?.status === 409;
+      send('error', {
+        code: isBusy ? 'session_busy' : 'stream_failed',
+        retryable: isBusy,
+        message: isBusy
+          ? 'Still finishing your last message — wait for it to finish, then send again.'
+          : (err?.message ?? 'Stream failed'),
+      });
+    }
     finally { res.end(); }
   }
 
