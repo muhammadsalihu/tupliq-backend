@@ -221,6 +221,27 @@ export class CloudAgentController {
     return this.cloudAgent.listRoutineRuns(user.id, id, cronId);
   }
 
+  /**
+   * Reattach to a turn that is still running.
+   *
+   * `active_response_id` is returned by the session; a client that reloaded
+   * mid-turn can resume streaming the remainder instead of rendering an empty
+   * thread while the Bot keeps working.
+   */
+  @UseGuards(JwtAuthGuard)
+  @Get('bots/:id/sessions/:sessionId/responses/:responseId/stream')
+  reattachResponseStream(
+    @CurrentUser() user: RequestUser,
+    @Param('id') id: string,
+    @Param('sessionId') sessionId: string,
+    @Param('responseId') responseId: string,
+    @Res() res: Response,
+  ) {
+    return this.cloudAgent.reattachResponseStream(
+      user.id, id, sessionId, responseId, res,
+    );
+  }
+
   // ── Session transcript ────────────────────────────────────────────
   // Agent37 exposes GET /v1/sessions/{id} with the full `history` array.
   // (There is no /sessions/{id}/messages route.)
@@ -246,8 +267,12 @@ export class CloudAgentController {
 
   @UseGuards(JwtAuthGuard)
   @Post('tools/connect')
-  connectTool(@CurrentUser() user: RequestUser, @Body('toolkit') toolkit: string) {
-    return this.cloudAgent.connectTool(user.id, toolkit);
+  connectTool(
+    @CurrentUser() user: RequestUser,
+    @Body('toolkit') toolkit: string,
+    @Body('returnTo') returnTo?: string,
+  ) {
+    return this.cloudAgent.connectTool(user.id, toolkit, returnTo);
   }
 
   @UseGuards(JwtAuthGuard)

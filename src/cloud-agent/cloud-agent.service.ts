@@ -1,4 +1,12 @@
-import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
+// Imported as a type so it doesn't shadow the global DOM `Response` used by fetch.
+import type { Response as ExpressResponse } from 'express';
 import { CronParserService } from './cron-parser.service';
 import { PushService } from '../push/push.service';
 import { ConfigService } from '@nestjs/config';
@@ -405,13 +413,50 @@ console.log(res.status, await res.text());`;
   // Bot chat
   // ═══════════════════════════════════════════════════════════
 
+  /** Fixed opening line — see BOT_BRIEF_START. The UI relies on both to strip it. */
+  static readonly BRIEF_START = 'App context (from the Bots app, not the user):';
+  /** Fixed closing line — see BOT_BRIEF_END. */
+  static readonly BRIEF_END = 'End of app context. The user message follows.';
+
+  /**
+   * Full brief, prepended ONLY to the first turn of a Bot's conversation.
+   *
+   * The reference sends the whole brief once, then a one-line reminder on later
+   * turns. Re-sending it every turn burned tokens on every message and, worse,
+   * put the app context into every replayed history entry.
+   */
   private botBrief(bot: any): string {
-    return `App context (from the Bots app, not the user):
+    return `${CloudAgentService.BRIEF_START}
 You are ${bot.name}, the user's ${bot.title}. ${bot.description || ''}
-Your notes are at ~/bots/${bot.handle}/notes.md - read them at the start of a turn and update them as you work.
-End of app context. The user message follows.
+Your notes file is ~/bots/${bot.handle}/notes.md. Read it before you start, and add to it whenever you learn something you should remember next time.
+To schedule a routine for yourself: agent37 cron add --name "${bot.handle}: <short name>" ...
+To message the user first: node ~/.grokbot/notify.mjs ${bot.handle} "<one or two sentences>"
+${CloudAgentService.BRIEF_END}
 
 `;
+  }
+
+  /** One-line reminder used on turns after the first. */
+  private botReminder(bot: any): string {
+    return `${CloudAgentService.BRIEF_START} (continuing — you are ${bot.name}; notes at ~/bots/${bot.handle}/notes.md)${CloudAgentService.BRIEF_END} `;
+  }
+
+  /**
+   * Strip app context back out of a user message.
+   *
+   * The brief rides along on the same `input` string as the real message, so it
+   * lands in history verbatim. The reference marks it with fixed first/last
+   * lines precisely so the UI can remove it when rendering a transcript.
+   */
+  static stripBrief(text: string): string {
+    if (!text) return '';
+    let out = String(text);
+    const start = out.indexOf(CloudAgentService.BRIEF_START);
+    const end = out.indexOf(CloudAgentService.BRIEF_END);
+    if (start !== -1 && end !== -1 && end > start) {
+      out = out.slice(0, start) + out.slice(end + CloudAgentService.BRIEF_END.length);
+    }
+    return out.trim();
   }
 
   async sendBotMessage(userId: string, botId: string, input: string, sessionId?: string, model?: string) {
@@ -420,6 +465,9 @@ End of app context. The user message follows.
     const bot = await this.prisma.bot.findFirst({ where: { id: botId, userId } });
     if (!bot) throw new NotFoundException('Bot not found.');
 
+    // Full brief only when this is the Bot's FIRST turn in this conversation;
+    // later turns get the one-line reminder so the context isn't resent forever.
+    const isFirstTurn = !sessionId;
     let sid = sessionId;
     if (!sid) {
       sid = crypto.randomBytes(16).toString('hex');
@@ -428,12 +476,18 @@ End of app context. The user message follows.
       await this.prisma.bot.update({ where: { id: bot.id }, data: { sessions } });
     }
 
-    const fullInput = this.botBrief(bot) + input;
+    const fullInput = (isFirstTurn ? this.botBrief(bot) : this.botReminder(bot)) + input;
     const body: Record<string, unknown> = { input: fullInput, session_id: sid };
     if (model && model !== 'default') body.model = model;
 
     const res = await this.request('POST', '/v1/responses', body, instance.instanceUrl) as Agent37Response;
-    return { output: res.output_text ?? '', sessionId: sid, usage: res.usage ?? null };
+    return {
+      output: res.output_text ?? '',
+      sessionId: sid,
+      usage: res.usage ?? null,
+      // Lets a client that reloaded mid-turn reattach to the stream.
+      activeResponseId: (res as unknown as Record<string, unknown>).active_response_id ?? null,
+    };
   }
 
   async sendBotMessageStream(
@@ -453,7 +507,8 @@ End of app context. The user message follows.
       await this.prisma.bot.update({ where: { id: bot.id }, data: { sessions } });
     }
 
-    const fullInput = this.botBrief(bot) + input;
+    const isFirstTurn = !sessionId;
+    const fullInput = (isFirstTurn ? this.botBrief(bot) : this.botReminder(bot)) + input;
     const body: Record<string, unknown> = { input: fullInput, session_id: sid, stream: true };
     if (model && model !== 'default') body.model = model;
 
@@ -680,13 +735,19 @@ End of app context. The user message follows.
       title: (raw?.title as string) ?? null,
       activeResponseId: (raw?.active_response_id as string) ?? null,
       context: (raw?.context as { used_tokens?: number; window_tokens?: number }) ?? null,
-      messages: history.map((m) => ({
-        id: String(m.id ?? ''),
-        role: String(m.role ?? 'assistant'),
-        text: String(m.content ?? m.text ?? ''),
-        thinking: (m.thinking as string) ?? null,
-        createdAt: m.created_at ?? null,
-      })),
+      messages: history.map((m) => {
+        const role = String(m.role ?? 'assistant');
+        const rawText = String(m.content ?? m.text ?? '');
+        return {
+          id: String(m.id ?? ''),
+          role,
+          // The brief rides on the user message that opened the conversation.
+          // Strip it so a replay shows what the user actually typed.
+          text: role === 'user' ? CloudAgentService.stripBrief(rawText) : rawText,
+          thinking: (m.thinking as string) ?? null,
+          createdAt: m.created_at ?? null,
+        };
+      }),
     };
   }
 
@@ -782,12 +843,43 @@ End of app context. The user message follows.
     }));
   }
 
-  async connectTool(userId: string, toolkit: string) {
+  /**
+   * Start an OAuth flow for a toolkit.
+   *
+   * `returnTo` is the app surface the user will land on after consenting. It was
+   * hardcoded to the web dashboard, so a flow started on the phone bounced the
+   * user to a website afterwards. Deep links can't carry a session, so on mobile
+   * we land on the web page (which can then deep-link back) rather than on a
+   * custom scheme that would break the redirect.
+   */
+  async connectTool(userId: string, toolkit: string, returnTo?: string) {
     this.assertKey();
     const instance = await this.getInstanceOrThrow(userId);
+    const callbackUrl = this.buildToolCallback(returnTo);
     return this.request('POST', `/v1/instances/${instance.instanceId}/integrations/connect`, {
-      toolkit, callbackUrl: 'https://www.tupliq.com/dashboard',
+      toolkit,
+      callbackUrl,
     });
+  }
+
+  /**
+   * Build the post-consent callback, carrying the origin surface as a query param
+   * so the landing page knows whether it was reached from web or mobile.
+   */
+  private buildToolCallback(returnTo?: string): string {
+    const base = process.env.TOOL_CALLBACK_URL ?? 'https://www.tupliq.com/dashboard';
+    let url: URL;
+    try {
+      url = new URL(base);
+    } catch {
+      url = new URL('https://www.tupliq.com/dashboard');
+    }
+    // Only `origin` is accepted — never an arbitrary caller-supplied URL, which
+    // would turn the OAuth flow into an open redirect.
+    const surface = returnTo === 'mobile' ? 'mobile' : returnTo === 'web' ? 'web' : '';
+    if (surface) url.searchParams.set('from', surface);
+    url.searchParams.set('tools', 'connected');
+    return url.toString();
   }
 
   async listConnections(userId: string) {
@@ -893,6 +985,12 @@ End of app context. The user message follows.
       headers: { 'X-Agent37-Key': this.apiKey, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
+    if (res.status === 409) {
+      // One turn per session at a time. Surface it as a real conflict so the
+      // client can lock the composer instead of showing a generic failure.
+      const text = await res.text();
+      throw new ConflictException(`This conversation is already working on your last message. ${text}`.trim());
+    }
     if (!res.ok) { const text = await res.text(); throw new BadRequestException(`Agent37 error ${res.status}: ${text}`); }
     const reader = res.body?.getReader();
     if (!reader) throw new BadRequestException('No response body');
@@ -922,6 +1020,52 @@ End of app context. The user message follows.
       }
     }
     return { sessionId: finalSessionId };
+  }
+
+  /**
+   * Resume a turn that is still running.
+   *
+   * A client that reloaded (or opened from a push) can recover a lost reply:
+   * `GET /v1/sessions/{id}` reports `active_response_id` while work is in
+   * flight, and this streams the remainder from that response.
+   */
+  async reattachResponseStream(
+    userId: string, botId: string, sessionId: string, responseId: string, res: ExpressResponse,
+  ) {
+    this.assertKey();
+    const instance = await this.getInstanceOrThrow(userId);
+    const bot = await this.prisma.bot.findFirst({ where: { id: botId, userId } });
+    if (!bot) throw new NotFoundException('Bot not found.');
+
+    const upstream = await fetch(
+      `${instance.instanceUrl}/v1/responses/${encodeURIComponent(responseId)}/stream`,
+      { headers: { 'X-Agent37-Key': this.apiKey } },
+    );
+    if (!upstream.ok || !upstream.body) {
+      const text = await upstream.text().catch(() => '');
+      // A finished turn has no live stream; the transcript already holds it.
+      throw new NotFoundException(`That response is no longer streaming. ${text}`.trim());
+    }
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Session-Id', sessionId);
+    res.flushHeaders?.();
+
+    const reader = upstream.body.getReader();
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        res.write(Buffer.from(value));
+        // Node needs an explicit flush or the client sees nothing until close.
+        (res as unknown as { flush?: () => void }).flush?.();
+      }
+    } finally {
+      res.end();
+    }
+    return;
   }
 
   // ═══════════════════════════════════════════════════════════
