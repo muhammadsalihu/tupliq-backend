@@ -27,11 +27,16 @@ export interface ToolkitDto {
   authSchemes?: string[];
 }
 
-/** An OAuth link a user has already completed. */
+/** One Composio connected account. */
 export interface ConnectionDto {
+  /** The connectedAccountId — the identifier disconnect is addressed by. */
+  id: string;
   toolkit: string;
+  label?: string;
   account?: string | null;
   status?: string;
+  /** Epoch milliseconds (Composio's native shape, not the API's usual seconds). */
+  createdAt?: number | null;
 }
 const MAX_CRONS = 50;
 
@@ -814,8 +819,12 @@ ${CloudAgentService.BRIEF_END}
   async listToolkits(userId: string, search?: string) {
     this.assertKey();
     const instance = await this.getInstanceOrThrow(userId);
+    // Search must be >= 3 chars or the platform returns 400, and `limit` is
+    // clamped to 1-24. Both are enforced here so a client typo surfaces as an
+    // empty list rather than an upstream 400.
     const params = new URLSearchParams({ limit: '24' });
-    if (search) params.set('search', search);
+    const q = (search ?? '').trim();
+    if (q.length >= 3) params.set('search', q);
     const raw = await this.request(
       'GET',
       `/v1/instances/${instance.instanceId}/integrations/toolkits?${params.toString()}`,
@@ -894,18 +903,32 @@ ${CloudAgentService.BRIEF_END}
       ['connections', 'data', 'items', 'results'],
       'connections',
     );
-    // Same shape drift as the catalog: platform uses `toolkit_slug`/`name`.
+    // Composio's native connected-account shape: `id`, `toolkitSlug`,
+    // `toolkitName`, `status`. Timestamps there are epoch MILLiseconds.
     return rows.map((c): ConnectionDto => ({
-      toolkit: String(c.toolkit ?? c.toolkit_slug ?? c.slug ?? ''),
-      account: (c.account ?? c.email ?? c.name ?? null) as string | null,
+      // `id` is the connectedAccountId — the identifier disconnect needs.
+      id: String(c.id ?? c.connectedAccountId ?? ''),
+      toolkit: String(c.toolkit ?? c.toolkitSlug ?? c.toolkit_slug ?? ''),
+      label: String(c.label ?? c.toolkitName ?? c.name ?? ''),
+      account: (c.account ?? c.email ?? c.status ?? null) as string | null,
       status: String(c.status ?? 'ACTIVE'),
+      createdAt: (c.createdAt ?? c.created_at ?? null) as number | null,
     }));
   }
 
-  async disconnectTool(userId: string, toolkit: string) {
+  /**
+   * Disconnect by `connectedAccountId`, NOT by toolkit slug.
+   *
+   * The same app can be connected more than once per instance (two Gmail
+   * accounts), so deleting by slug is ambiguous — the route takes the account id.
+   */
+  async disconnectTool(userId: string, connectedAccountId: string) {
     this.assertKey();
     const instance = await this.getInstanceOrThrow(userId);
-    return this.request('DELETE', `/v1/instances/${instance.instanceId}/integrations/connections/${encodeURIComponent(toolkit)}`);
+    return this.request(
+      'DELETE',
+      `/v1/instances/${instance.instanceId}/integrations/connections/${encodeURIComponent(connectedAccountId)}`,
+    );
   }
 
   // ═══════════════════════════════════════════════════════════
