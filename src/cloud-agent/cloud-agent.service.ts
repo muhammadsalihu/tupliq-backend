@@ -6,6 +6,21 @@ import { PrismaService } from '../prisma/prisma.service';
 import * as crypto from 'crypto';
 
 const AGENT37_API = 'https://api.agent37.com';
+
+/** A connectable tool offered by Agent37 (Gmail, Slack, GitHub, …). */
+export interface ToolkitDto {
+  toolkit: string;
+  label?: string;
+  description?: string;
+  icon?: string;
+}
+
+/** An OAuth link a user has already completed. */
+export interface ConnectionDto {
+  toolkit: string;
+  account?: string | null;
+  status?: string;
+}
 const MAX_CRONS = 50;
 
 interface Agent37Instance {
@@ -596,12 +611,41 @@ End of app context. The user message follows.
   // Tools
   // ═══════════════════════════════════════════════════════════
 
+  /**
+   * Agent37 wraps list responses in an envelope (e.g. {toolkits:[...]}); clients
+   * expect a bare array. Returning the raw body made every client hit its
+   * `Array.isArray(x) ? x : []` guard and silently render an empty catalog with
+   * no error. Normalize here so the shape is guaranteed, and log anything we
+   * don't recognise so the next oddity is visible instead of silent.
+   */
+  private toArray<T>(payload: unknown, keys: string[], label: string): T[] {
+    if (Array.isArray(payload)) return payload as T[];
+    if (payload && typeof payload === 'object') {
+      for (const k of keys) {
+        const v = (payload as Record<string, unknown>)[k];
+        if (Array.isArray(v)) return v as T[];
+      }
+    }
+    this.logger.warn(
+      `Agent37 ${label} returned an unrecognised shape: ${JSON.stringify(payload).slice(0, 200)}`,
+    );
+    return [];
+  }
+
   async listToolkits(userId: string, search?: string) {
     this.assertKey();
     const instance = await this.getInstanceOrThrow(userId);
-    let path = `/v1/instances/${instance.instanceId}/integrations/toolkits?limit=24`;
-    if (search) path += `&search=${encodeURIComponent(search)}`;
-    return this.request('GET', path);
+    const params = new URLSearchParams({ limit: '24' });
+    if (search) params.set('search', search);
+    const raw = await this.request(
+      'GET',
+      `/v1/instances/${instance.instanceId}/integrations/toolkits?${params.toString()}`,
+    );
+    return this.toArray<ToolkitDto>(
+      raw,
+      ['toolkits', 'data', 'items', 'results'],
+      'toolkits',
+    );
   }
 
   async connectTool(userId: string, toolkit: string) {
@@ -615,7 +659,15 @@ End of app context. The user message follows.
   async listConnections(userId: string) {
     this.assertKey();
     const instance = await this.getInstanceOrThrow(userId);
-    return this.request('GET', `/v1/instances/${instance.instanceId}/integrations/connections`);
+    const raw = await this.request(
+      'GET',
+      `/v1/instances/${instance.instanceId}/integrations/connections`,
+    );
+    return this.toArray<ConnectionDto>(
+      raw,
+      ['connections', 'data', 'items', 'results'],
+      'connections',
+    );
   }
 
   async disconnectTool(userId: string, toolkit: string) {
