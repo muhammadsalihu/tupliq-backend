@@ -63,6 +63,7 @@ model User {
 
   instances UserInstance[]
   bots      Bot[]
+  promoRedemptions PromoRedemption[]
 
   @@map("users")
 }
@@ -165,6 +166,38 @@ model Subscription {
 
   @@unique([userId, entitlement])
   @@map("subscriptions")
+}
+
+// Promo codes: reusable Pro-access codes (manual grants, beta users, hackathon winners).
+// Admin generates codes with a seat count + duration; users redeem in-app.
+model PromoCode {
+  id             String    @id @default(uuid())
+  code           String    @unique
+  description    String?
+  maxRedemptions Int       @default(1) @map("maxRedemptions")
+  redeemedCount  Int       @default(0) @map("redeemedCount")
+  durationDays   Int       @default(30) @map("durationDays")
+  active         Boolean   @default(true)
+  expiresAt      DateTime? @map("expiresAt")
+  createdAt      DateTime  @default(now()) @map("createdAt")
+
+  redemptions PromoRedemption[]
+
+  @@map("promo_codes")
+}
+
+model PromoRedemption {
+  id         String   @id @default(uuid())
+  codeId     String   @map("codeId")
+  userId     String   @map("userId")
+  redeemedAt DateTime @default(now()) @map("redeemedAt")
+
+  code PromoCode @relation(fields: [codeId], references: [id], onDelete: Cascade)
+  user User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([codeId, userId])
+  @@index([userId])
+  @@map("promo_redemptions")
 }
 
 model Hackathon {

@@ -14,6 +14,7 @@ import { SavedOutputsModule } from './saved-outputs/saved-outputs.module';
 import { PushModule } from './push/push.module';
 import { CloudAgentModule } from './cloud-agent/cloud-agent.module';
 import { WaitlistModule } from './waitlist/waitlist.module';
+import { PromoModule } from './promo/promo.module';
 import { HealthController } from './health/health.controller';
 import { RequestLoggerMiddleware } from './common/request-logger.middleware';
 
@@ -34,6 +35,7 @@ import { RequestLoggerMiddleware } from './common/request-logger.middleware';
     PushModule,
     CloudAgentModule,
     WaitlistModule,
+    PromoModule,
   ],
   controllers: [HealthController],
 })
