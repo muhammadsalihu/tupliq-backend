@@ -4,6 +4,7 @@ import {
   BadRequestException,
   ConflictException,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 // Imported as a type so it doesn't shadow the global DOM `Response` used by fetch.
 import type { Response as ExpressResponse } from 'express';
@@ -22,6 +23,8 @@ export interface ToolkitDto {
   label?: string;
   description?: string;
   icon?: string;
+  /** False when the workspace has not provisioned this toolkit yet. */
+  enabled?: boolean;
   /** No-auth tools connect instantly and never open a browser. */
   isNoAuth?: boolean;
   authSchemes?: string[];
@@ -825,10 +828,21 @@ ${CloudAgentService.BRIEF_END}
     const params = new URLSearchParams({ limit: '24' });
     const q = (search ?? '').trim();
     if (q.length >= 3) params.set('search', q);
-    const raw = await this.request(
-      'GET',
-      `/v1/instances/${instance.instanceId}/integrations/toolkits?${params.toString()}`,
-    );
+    let raw: unknown;
+    try {
+      raw = await this.request(
+        'GET',
+        `/v1/instances/${instance.instanceId}/integrations/toolkits?${params.toString()}`,
+      );
+    } catch (e: any) {
+      // Previously swallowed into `[]`, which the UI rendered as "No tools
+      // available" — indistinguishable from a genuinely empty catalog. Let the
+      // real reason reach the user.
+      this.logger.warn(`Toolkit catalog failed for instance ${instance.instanceId}: ${e?.message}`);
+      throw new ServiceUnavailableException(
+        'Could not reach the app catalog. Check the Cloud Agent is running, then retry.',
+      );
+    }
     const rows = this.toArray<Record<string, unknown>>(
       raw,
       ['toolkits', 'data', 'items', 'results'],
@@ -843,6 +857,9 @@ ${CloudAgentService.BRIEF_END}
       label: String(t.label ?? t.name ?? t.slug ?? ''),
       description: (t.description ?? undefined) as string | undefined,
       icon: (t.icon ?? t.logo ?? undefined) as string | undefined,
+      // `enabled: false` means the workspace hasn't provisioned this toolkit;
+      // offering a Connect button for it would just fail.
+      enabled: t.enabled !== false,
       isNoAuth: t.isNoAuth === true || t.is_no_auth === true,
       authSchemes: Array.isArray(t.authSchemes)
         ? (t.authSchemes as unknown[]).map(String)
