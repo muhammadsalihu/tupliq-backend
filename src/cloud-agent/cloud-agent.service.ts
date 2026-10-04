@@ -700,12 +700,15 @@ ${CloudAgentService.BRIEF_END}
     });
 
     const title = bot ? bot.name : 'Your cloud agent';
-    await this.push.sendToUser(record.userId, {
-      title,
-      body: params.text,
-      data: { type: 'cloud-agent-notify', bot: params.botHandle },
-    });
-    return { ok: true, bot: bot?.handle ?? null };
+    const data = { type: 'cloud-agent-notify', bot: params.botHandle };
+    // Fan out to both providers. OneSignal is the primary path (the app is
+    // already built for it and tap-routing works); Expo Push stays registered
+    // as a second delivery route rather than being removed.
+    const [expo, oneSignal] = await Promise.all([
+      this.push.sendToUser(record.userId, { title, body: params.text, data }),
+      this.push.sendToUserViaOneSignal(record.userId, { title, body: params.text, data }),
+    ]);
+    return { ok: true, bot: bot?.handle ?? null, delivered: { expo, oneSignal } };
   }
 
   /**

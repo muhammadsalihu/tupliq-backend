@@ -2,6 +2,9 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
+const ONESIGNAL_APP_ID = process.env.ONESIGNAL_APP_ID ?? '';
+const ONESIGNAL_REST_API_KEY = process.env.ONESIGNAL_REST_API_KEY ?? '';
+const ONESIGNAL_API = 'https://api.onesignal.com/notifications';
 /** Expo push tickets confirm receipt but not delivery; keep this bounded. */
 const MAX_TOKENS_PER_USER = 10;
 
@@ -30,6 +33,47 @@ export class PushService {
       where: { userId },
       select: { id: true, platform: true, createdAt: true },
     });
+  }
+
+  /**
+   * Send to every registered OneSignal subscription for a user, addressed by
+   * external_id (which the app sets to its Tupliq uid via OneSignal.login).
+   * Falls back to nothing rather than throwing when unconfigured, so routine
+   * notifications still succeed over Expo Push.
+   */
+  async sendToUserViaOneSignal(
+    userId: string,
+    message: { title: string; body: string; data?: Record<string, unknown> },
+  ): Promise<{ sent: number; error?: string }> {
+    if (!ONESIGNAL_APP_ID || !ONESIGNAL_REST_API_KEY) {
+      return { sent: 0, error: 'OneSignal is not configured (ONESIGNAL_APP_ID / ONESIGNAL_REST_API_KEY)' };
+    }
+    try {
+      const res = await fetch(ONESIGNAL_API, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Basic ${Buffer.from(`${ONESIGNAL_REST_API_KEY}:`).toString('base64')}`,
+        },
+        body: JSON.stringify({
+          app_id: ONESIGNAL_APP_ID,
+          headings: { en: message.title },
+          contents: { en: message.body },
+          data: message.data,
+          include_aliases: { external_id: [userId] },
+          target_channel: 'push',
+        }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { id?: string; errors?: string[] };
+      if (!res.ok) {
+        this.logger.warn(`OneSignal rejected: HTTP ${res.status} ${JSON.stringify(body.errors ?? body).slice(0, 300)}`);
+        return { sent: 0, error: `HTTP ${res.status}` };
+      }
+      return { sent: 1, ...(body.id ? { id: body.id } : {}) } as { sent: number };
+    } catch (err) {
+      this.logger.warn(`OneSignal send failed: ${String(err)}`);
+      return { sent: 0, error: String(err) };
+    }
   }
 
   /** Fire-and-forget push via the Expo push service. Never throws. */

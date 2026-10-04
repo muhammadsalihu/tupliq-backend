@@ -29,11 +29,19 @@ export class PushController {
 
   /** Sends a test notification to all of the user's registered devices. */
   @Post('test')
-  test(@CurrentUser() user: RequestUser) {
-    return this.push.sendToUser(user.id, {
+  async test(@CurrentUser() user: RequestUser) {
+    const message = {
       title: 'Tupliq Agent',
       body: 'Push notifications are working 🎉',
-    });
+      data: { type: 'push-test' },
+    };
+    const [expo, oneSignal] = await Promise.all([
+      this.push.sendToUser(user.id, message),
+      this.push.sendToUserViaOneSignal(user.id, message),
+    ]);
+    // Report both so a zero here names the unconfigured provider instead of
+    // looking like a delivery success.
+    return { expo, oneSignal };
   }
 
   @Get('tokens')
