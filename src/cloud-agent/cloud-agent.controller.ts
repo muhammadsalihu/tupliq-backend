@@ -197,6 +197,16 @@ export class CloudAgentController {
     return this.cloudAgent.testRoutine(user.id, id, cronName);
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Get('bots/:id/sessions/:sessionId/messages')
+  listSessionMessages(
+    @CurrentUser() user: RequestUser,
+    @Param('id') id: string,
+    @Param('sessionId') sessionId: string,
+  ) {
+    return this.cloudAgent.listSessionMessages(user.id, id, sessionId);
+  }
+
   // ── Tools ─────────────────────────────────────────────────────────
 
   @UseGuards(JwtAuthGuard)

@@ -595,6 +595,47 @@ End of app context. The user message follows.
     return { ok: true, bot: bot?.handle ?? null };
   }
 
+  /**
+   * Replay a past conversation.
+   *
+   * Session labels live on the bot, but the transcript itself lives on the
+   * Agent37 instance — the mobile client had no way to read it, so switching
+   * sessions just showed an empty screen. Normalize whatever Agent37 returns into
+   * a flat {role, text} list so the client never has to guess.
+   */
+  async listSessionMessages(userId: string, botId: string, sessionId: string) {
+    this.assertKey();
+    const instance = await this.getInstanceOrThrow(userId);
+    const bot = await this.prisma.bot.findFirst({ where: { id: botId, userId } });
+    if (!bot) throw new NotFoundException('Bot not found.');
+
+    let raw: unknown;
+    try {
+      raw = await this.request(
+        'GET',
+        `/v1/instances/${instance.instanceId}/sessions/${encodeURIComponent(sessionId)}/messages`,
+      );
+    } catch {
+      // Older instances may not expose history; degrade to empty rather than error.
+      this.logger.warn(`No transcript available for session ${sessionId}`);
+      return [];
+    }
+
+    const rows = this.toArray<Record<string, unknown>>(raw, [
+      'messages',
+      'items',
+      'data',
+      'results',
+    ], `session messages ${sessionId}`);
+
+    return rows.map((r) => ({
+      id: String(r.id ?? r.message_id ?? ''),
+      role: String(r.role ?? r.type ?? 'assistant'),
+      text: String(r.text ?? r.content ?? r.output_text ?? ''),
+      createdAt: r.created_at ?? r.createdAt ?? null,
+    }));
+  }
+
   async deleteRoutine(userId: string, _botId: string, cronName: string) {
     this.assertKey();
     const instance = await this.getInstanceOrThrow(userId);
