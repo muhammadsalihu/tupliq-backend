@@ -8,9 +8,11 @@ import {
 import { GeminiProvider } from './gemini.provider';
 import { OpenAIProvider } from './openai.provider';
 import { AnthropicProvider } from './anthropic.provider';
+import { Llm7Provider } from './llm7.provider';
+import { NebiusProvider } from './nebius.provider';
 import { AllProvidersFailedException } from '../../common/http-exceptions';
 
-export const MAX_PROVIDER_ATTEMPTS = 3;
+export const MAX_PROVIDER_ATTEMPTS = 4;
 
 /** Maps user-facing AI preference to a provider name. */
 const PREFERENCE_MAP: Record<string, ProviderName> = {
@@ -27,16 +29,26 @@ export class ProviderChainService {
     private readonly gemini: GeminiProvider,
     private readonly openai: OpenAIProvider,
     private readonly anthropic: AnthropicProvider,
+    private readonly llm7: Llm7Provider,
+    private readonly nebius: NebiusProvider,
   ) {}
 
-  /** Configured providers in default priority order (Gemini first). */
+  /** Configured providers in priority order: Groq (openai-compat) first, Gemini second,
+   *  Anthropic third, keyless llm7 last as the never-fail backstop. */
   available(): AIProvider[] {
-    return [this.gemini, this.openai, this.anthropic].filter((p) => p.isConfigured());
+    return [this.openai, this.gemini, this.anthropic, this.llm7].filter((p) => p.isConfigured());
   }
 
-  /** Ordered chain honoring the user's preference, capped at MAX_PROVIDER_ATTEMPTS. */
-  chainFor(preference: string | undefined | null): AIProvider[] {
-    const all = this.available();
+  /** Free tier: Groq → Gemini → Anthropic → llm7. Pro tier: Nebius (paid, cheap
+   *  GLM-5.3-Flash) first, then everything free as fallback so pro runs still succeed. */
+  availableForPro(): AIProvider[] {
+    const free = this.available();
+    return this.nebius.isConfigured() ? [this.nebius, ...free] : free;
+  }
+
+  /** Ordered chain honoring the user's preference and tier, capped at MAX_PROVIDER_ATTEMPTS. */
+  chainFor(preference: string | undefined | null, isPro = false): AIProvider[] {
+    const all = isPro ? this.availableForPro() : this.available();
     const preferredName = preference ? PREFERENCE_MAP[preference] : undefined;
     if (!preferredName) return all.slice(0, MAX_PROVIDER_ATTEMPTS);
 
@@ -52,9 +64,10 @@ export class ProviderChainService {
   async generateWithFallback(
     request: AiCompletionRequest,
     preference?: string | null,
+    isPro = false,
     onAttempt?: (provider: ProviderName) => void,
   ): Promise<AiCompletionResult> {
-    const chain = this.chainFor(preference);
+    const chain = this.chainFor(preference, isPro);
     if (chain.length === 0) {
       throw new AllProvidersFailedException(
         'No AI provider is configured on the server. Set GEMINI_API_KEY, OPENAI_API_KEY or ANTHROPIC_API_KEY.',

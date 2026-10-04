@@ -1,4 +1,4 @@
-export type ProviderName = 'gemini' | 'openai' | 'anthropic';
+export type ProviderName = 'gemini' | 'openai' | 'anthropic' | 'llm7' | 'nebius';
 
 export interface AiCompletionRequest {
   system: string;

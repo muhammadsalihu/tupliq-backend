@@ -113,6 +113,7 @@ export class AgentService {
       if (!profile) throw new NotFoundException('User not found');
 
       let preference = profile.aiPreference || 'auto';
+      const isPro = await this.billing.isPro(user.id);
       let inputs: Record<string, string> = { ...(dto.input ?? {}) };
       let definition: WorkflowDefinition;
 
@@ -198,6 +199,7 @@ export class AgentService {
           inputs,
           { userName: profile.name, role: profile.role },
           preference,
+          isPro,
           providerSessionId,
           send,
         );
@@ -256,6 +258,7 @@ export class AgentService {
     inputs: Record<string, string>,
     ctx: { userName?: string | null; role?: string | null },
     preference: string,
+    isPro: boolean,
     sessionId: string,
     send: SseSend,
   ): Promise<{ parsed: unknown; provider: string; model: string }> {
@@ -284,6 +287,7 @@ export class AgentService {
           signal: AbortSignal.timeout(AI_TIMEOUT_MS),
         },
         preference,
+        isPro,
       );
       send('step', {
         key: 'model_selected',

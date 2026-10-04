@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AIProvider, AiCompletionRequest, AiCompletionResult } from './ai-provider.interface';
 
-const DEFAULT_MODEL = 'gemini-2.0-flash';
+const DEFAULT_MODEL = 'gemini-3.1-flash-lite';
 const BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 @Injectable()
