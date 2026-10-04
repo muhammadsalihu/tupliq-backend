@@ -9,10 +9,14 @@ const AGENT37_API = 'https://api.agent37.com';
 
 /** A connectable tool offered by Agent37 (Gmail, Slack, GitHub, …). */
 export interface ToolkitDto {
+  /** The toolkit slug — the identifier every connect/disconnect call uses. */
   toolkit: string;
   label?: string;
   description?: string;
   icon?: string;
+  /** No-auth tools connect instantly and never open a browser. */
+  isNoAuth?: boolean;
+  authSchemes?: string[];
 }
 
 /** An OAuth link a user has already completed. */
@@ -755,11 +759,27 @@ End of app context. The user message follows.
       'GET',
       `/v1/instances/${instance.instanceId}/integrations/toolkits?${params.toString()}`,
     );
-    return this.toArray<ToolkitDto>(
+    const rows = this.toArray<Record<string, unknown>>(
       raw,
       ['toolkits', 'data', 'items', 'results'],
       'toolkits',
     );
+    // The platform returns `{items:[...]}` with `slug`/`name`/`description`/`logo`,
+    // while both clients render `toolkit`/`label`/`description`/`icon`. Normalize
+    // once here so web and mobile can never drift from each other — the previous
+    // pass-through left the catalog populated but blank on screen.
+    return rows.map((t): ToolkitDto => ({
+      toolkit: String(t.toolkit ?? t.slug ?? ''),
+      label: String(t.label ?? t.name ?? t.slug ?? ''),
+      description: (t.description ?? undefined) as string | undefined,
+      icon: (t.icon ?? t.logo ?? undefined) as string | undefined,
+      isNoAuth: t.isNoAuth === true || t.is_no_auth === true,
+      authSchemes: Array.isArray(t.authSchemes)
+        ? (t.authSchemes as unknown[]).map(String)
+        : Array.isArray(t.auth_schemes)
+          ? (t.auth_schemes as unknown[]).map(String)
+          : undefined,
+    }));
   }
 
   async connectTool(userId: string, toolkit: string) {
@@ -777,11 +797,17 @@ End of app context. The user message follows.
       'GET',
       `/v1/instances/${instance.instanceId}/integrations/connections`,
     );
-    return this.toArray<ConnectionDto>(
+    const rows = this.toArray<Record<string, unknown>>(
       raw,
       ['connections', 'data', 'items', 'results'],
       'connections',
     );
+    // Same shape drift as the catalog: platform uses `toolkit_slug`/`name`.
+    return rows.map((c): ConnectionDto => ({
+      toolkit: String(c.toolkit ?? c.toolkit_slug ?? c.slug ?? ''),
+      account: (c.account ?? c.email ?? c.name ?? null) as string | null,
+      status: String(c.status ?? 'ACTIVE'),
+    }));
   }
 
   async disconnectTool(userId: string, toolkit: string) {
