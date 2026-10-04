@@ -528,14 +528,60 @@ End of app context. The user message follows.
   // Routines
   // ═══════════════════════════════════════════════════════════
 
+  /**
+   * Crons belong to the INSTANCE, not the bot — the reference files them by a
+   * `"<handle>: <name>"` prefix, and all of a user's bots share one 50-cron cap.
+   */
   async listRoutines(userId: string, botId: string) {
     this.assertKey();
     const bot = await this.prisma.bot.findFirst({ where: { id: botId, userId } });
     if (!bot) throw new NotFoundException('Bot not found.');
     const instance = await this.getInstanceOrThrow(userId);
-    const crons = await this.request('GET', `/v1/instances/${instance.instanceId}/crons`) as any[];
-    if (!Array.isArray(crons)) return [];
-    return crons.filter((c: any) => c.name?.startsWith(`${bot.handle}:`));
+    // Normalize: /crons may be enveloped, and the old `as any[]` silently
+    // returned [] on any surprise shape — the same trap that emptied the tools
+    // catalog. A bare array still works.
+    const crons = this.toArray<Record<string, any>>(
+      await this.request('GET', `/v1/instances/${instance.instanceId}/crons`),
+      ['crons', 'data', 'items', 'results'],
+      'crons',
+    );
+    return crons
+      .filter((c) => String(c.name ?? '').startsWith(`${bot.handle}:`))
+      .map((c) => ({
+        id: String(c.id ?? ''),
+        name: String(c.name ?? '').slice(bot.handle.length + 1).trim(),
+        cronName: String(c.name ?? ''),
+        schedule: String(c.schedule ?? ''),
+        timezone: String(c.timezone ?? 'UTC'),
+        prompt: String(c.prompt ?? ''),
+        enabled: c.enabled !== false,
+        lastRun: c.last_run ?? null,
+        nextRun: c.next_run ?? null,
+      }));
+  }
+
+  /**
+   * Resolve a cronId and prove it belongs to this user's bot.
+   *
+   * Agent37 addresses crons by 12-hex id, NOT by name. The previous code passed
+   * the name straight into the id slot, so delete and test-run could never work.
+   */
+  private async assertCron(userId: string, botId: string, cronId: string) {
+    const bot = await this.prisma.bot.findFirst({ where: { id: botId, userId } });
+    if (!bot) throw new NotFoundException('Bot not found.');
+    const instance = await this.getInstanceOrThrow(userId);
+    const crons = this.toArray<Record<string, any>>(
+      await this.request('GET', `/v1/instances/${instance.instanceId}/crons`),
+      ['crons', 'data', 'items', 'results'],
+      'crons',
+    );
+    const cron = crons.find((c) => String(c.id ?? '') === cronId);
+    // Scoped to the bot's own prefix: one bot's cron must not be reachable via
+    // another bot's id, even for the same user.
+    if (!cron || !String(cron.name ?? '').startsWith(`${bot.handle}:`)) {
+      throw new NotFoundException('Routine not found.');
+    }
+    return { instance, cron };
   }
 
   async createRoutine(userId: string, botId: string, dto: { name: string; schedule: string; timezone: string; prompt: string }) {
@@ -598,54 +644,81 @@ End of app context. The user message follows.
   /**
    * Replay a past conversation.
    *
-   * Session labels live on the bot, but the transcript itself lives on the
-   * Agent37 instance — the mobile client had no way to read it, so switching
-   * sessions just showed an empty screen. Normalize whatever Agent37 returns into
-   * a flat {role, text} list so the client never has to guess.
+   * The Agent37 contract is `GET /v1/sessions/{id}` returning
+   * `{id, agent, active_response_id, history, context}` — there is no
+   * /messages route. `active_response_id` is non-null while a turn is still
+   * running and its messages are not in history yet; we pass it through so the
+   * client can reattach rather than render an empty thread.
    */
-  async listSessionMessages(userId: string, botId: string, sessionId: string) {
+  async getSessionTranscript(userId: string, botId: string, sessionId: string) {
     this.assertKey();
     const instance = await this.getInstanceOrThrow(userId);
     const bot = await this.prisma.bot.findFirst({ where: { id: botId, userId } });
     if (!bot) throw new NotFoundException('Bot not found.');
 
-    let raw: unknown;
+    let raw: Record<string, unknown>;
     try {
-      raw = await this.request(
+      raw = (await this.request(
         'GET',
-        `/v1/instances/${instance.instanceId}/sessions/${encodeURIComponent(sessionId)}/messages`,
-      );
+        `/v1/instances/${instance.instanceId}/sessions/${encodeURIComponent(sessionId)}`,
+      )) as Record<string, unknown>;
     } catch {
-      // Older instances may not expose history; degrade to empty rather than error.
+      // An unknown session id returns an empty history rather than a 404, but a
+      // gateway that predates /sessions will throw. Degrade instead of erroring.
       this.logger.warn(`No transcript available for session ${sessionId}`);
-      return [];
+      return { sessionId, activeResponseId: null, context: null, messages: [] };
     }
 
-    const rows = this.toArray<Record<string, unknown>>(raw, [
-      'messages',
-      'items',
-      'data',
-      'results',
-    ], `session messages ${sessionId}`);
+    const history = Array.isArray(raw?.history) ? (raw.history as Record<string, unknown>[]) : [];
 
-    return rows.map((r) => ({
-      id: String(r.id ?? r.message_id ?? ''),
-      role: String(r.role ?? r.type ?? 'assistant'),
-      text: String(r.text ?? r.content ?? r.output_text ?? ''),
-      createdAt: r.created_at ?? r.createdAt ?? null,
-    }));
+    return {
+      sessionId,
+      title: (raw?.title as string) ?? null,
+      activeResponseId: (raw?.active_response_id as string) ?? null,
+      context: (raw?.context as { used_tokens?: number; window_tokens?: number }) ?? null,
+      messages: history.map((m) => ({
+        id: String(m.id ?? ''),
+        role: String(m.role ?? 'assistant'),
+        text: String(m.content ?? m.text ?? ''),
+        thinking: (m.thinking as string) ?? null,
+        createdAt: m.created_at ?? null,
+      })),
+    };
   }
 
-  async deleteRoutine(userId: string, _botId: string, cronName: string) {
+  async deleteRoutine(userId: string, botId: string, cronId: string) {
     this.assertKey();
-    const instance = await this.getInstanceOrThrow(userId);
-    return this.request('DELETE', `/v1/instances/${instance.instanceId}/crons/${encodeURIComponent(cronName)}`);
+    const { instance } = await this.assertCron(userId, botId, cronId);
+    return this.request('DELETE', `/v1/instances/${instance.instanceId}/crons/${encodeURIComponent(cronId)}`);
   }
 
-  async testRoutine(userId: string, _botId: string, cronName: string) {
+  async testRoutine(userId: string, botId: string, cronId: string) {
     this.assertKey();
-    const instance = await this.getInstanceOrThrow(userId);
-    return this.request('POST', `/v1/instances/${instance.instanceId}/crons/${encodeURIComponent(cronName)}/run`);
+    const { instance } = await this.assertCron(userId, botId, cronId);
+    return this.request('POST', `/v1/instances/${instance.instanceId}/crons/${encodeURIComponent(cronId)}/run`);
+  }
+
+  /** Pause/resume without deleting. A paused cron reports next_run: null. */
+  async setRoutineEnabled(userId: string, botId: string, cronId: string, enabled: boolean) {
+    this.assertKey();
+    const { instance } = await this.assertCron(userId, botId, cronId);
+    return this.request('PATCH', `/v1/instances/${instance.instanceId}/crons/${encodeURIComponent(cronId)}`, {
+      enabled,
+    });
+  }
+
+  /**
+   * Run history. Each triggered run carries the session it opened, so tapping a
+   * run can show what the Bot actually did.
+   */
+  async listRoutineRuns(userId: string, botId: string, cronId: string) {
+    this.assertKey();
+    const { instance } = await this.assertCron(userId, botId, cronId);
+    const raw = await this.request(
+      'GET',
+      `/v1/instances/${instance.instanceId}/crons/${encodeURIComponent(cronId)}/runs`,
+    );
+    return this.toArray<Record<string, unknown>>(raw, ['runs', 'data', 'items', 'results'], 'cron runs');
   }
 
   // ═══════════════════════════════════════════════════════════

@@ -176,35 +176,63 @@ export class CloudAgentController {
     return this.cloudAgent.createRoutine(user.id, id, dto);
   }
 
+  // Routed on the 12-hex cron id: Agent37 addresses crons by id, never by name.
   @UseGuards(JwtAuthGuard)
-  @Delete('bots/:id/routines/:cronName')
+  @Delete('bots/:id/routines/:cronId')
   @HttpCode(200)
   deleteRoutine(
     @CurrentUser() user: RequestUser,
     @Param('id') id: string,
-    @Param('cronName') cronName: string,
+    @Param('cronId') cronId: string,
   ) {
-    return this.cloudAgent.deleteRoutine(user.id, id, cronName);
+    return this.cloudAgent.deleteRoutine(user.id, id, cronId);
   }
 
   @UseGuards(JwtAuthGuard)
-  @Post('bots/:id/routines/:cronName/test')
+  @Post('bots/:id/routines/:cronId/test')
   testRoutine(
     @CurrentUser() user: RequestUser,
     @Param('id') id: string,
-    @Param('cronName') cronName: string,
+    @Param('cronId') cronId: string,
   ) {
-    return this.cloudAgent.testRoutine(user.id, id, cronName);
+    return this.cloudAgent.testRoutine(user.id, id, cronId);
   }
 
+  /** Pause/resume a routine without deleting it. */
   @UseGuards(JwtAuthGuard)
-  @Get('bots/:id/sessions/:sessionId/messages')
-  listSessionMessages(
+  @Patch('bots/:id/routines/:cronId')
+  setRoutineEnabled(
+    @CurrentUser() user: RequestUser,
+    @Param('id') id: string,
+    @Param('cronId') cronId: string,
+    @Body('enabled') enabled: boolean,
+  ) {
+    return this.cloudAgent.setRoutineEnabled(user.id, id, cronId, enabled !== false);
+  }
+
+  /** Run history; each run carries the session it opened. */
+  @UseGuards(JwtAuthGuard)
+  @Get('bots/:id/routines/:cronId/runs')
+  listRoutineRuns(
+    @CurrentUser() user: RequestUser,
+    @Param('id') id: string,
+    @Param('cronId') cronId: string,
+  ) {
+    return this.cloudAgent.listRoutineRuns(user.id, id, cronId);
+  }
+
+  // ── Session transcript ────────────────────────────────────────────
+  // Agent37 exposes GET /v1/sessions/{id} with the full `history` array.
+  // (There is no /sessions/{id}/messages route.)
+
+  @UseGuards(JwtAuthGuard)
+  @Get('bots/:id/sessions/:sessionId')
+  getSessionTranscript(
     @CurrentUser() user: RequestUser,
     @Param('id') id: string,
     @Param('sessionId') sessionId: string,
   ) {
-    return this.cloudAgent.listSessionMessages(user.id, id, sessionId);
+    return this.cloudAgent.getSessionTranscript(user.id, id, sessionId);
   }
 
   // ── Tools ─────────────────────────────────────────────────────────
