@@ -4,7 +4,33 @@ NestJS + Prisma + Supabase (managed Postgres — **there is no local DB**), runn
 container `tupliq-backend` on the VPS: `127.0.0.1:3002` → **https://api.airbills.digital** via Caddy.
 Read this before changing endpoints, migrations or email.
 
-_Last updated: 2026-10-04._
+_Last updated: 2026-10-04 (cloud-agent Pro gate + notify + cron parser)._
+
+
+## Cloud agent hardening — _verified live 2026-10-04_
+
+- **ProGuard** (`src/cloud-agent/guards/pro-guard.ts`): class-level `@UseGuards(JwtAuthGuard, ProGuard)` +
+  `@ProOnly()` on `CloudAgentController`. Free users get **402** with
+  `Cloud Agent is a Pro feature. Upgrade to Tupliq Pro...` (a thrown `HttpException` — the earlier
+  `response.status(402)+false` shape produced Nest's default 403 body). Verified live: free JWT →
+  402 on `/cloud-agent/status` and `/cloud-agent/provision`; owner JWT → passes.
+- **`/cloud-agent/notify` is real now** — it was a stub behind JwtAuthGuard (every bot push 401'd).
+  It is its own controller class (`CloudAgentNotifyController`, NO class-level guards) because
+  `@UseGuards` cannot be opt-out per route. Auth is the per-instance `GROKBOT_NOTIFY_TOKEN` from
+  `X-Notify-Token` or `Authorization: Bearer`; on match it resolves the Bot by handle and sends a
+  real Expo push via `PushService.sendToUser`. Verified live: no token → missing-token 400-shaped
+  reply; bogus token → `{ok:false,reason:"Unauthorized"}`.
+- **`CronParserService`** (`src/cloud-agent/cron-parser.service.ts`): plain English → 5-field cron
+  ("every weekday at 9am", "daily at 14:30", "every 30 minutes", "mondays at noon", "every morning",
+  noon/midnight, word numbers). Raw cron passes through after structural validation; anything
+  unparseable → 400 with a suggestion. `createRoutine` parses BEFORE calling Agent37, so clients
+  cannot push arbitrary schedules. 34/34 unit cases pass (`/tmp/crontest/cron-test*.ts`).
+- **`GET /cloud-agent/bots/:id/sessions`** returns `Bot.sessions` (`[{id,label}]`) for the mobile
+  session drawer. Note: switching session does NOT replay history (Agent37 doesn't expose past
+  messages); the label list is server truth.
+- Module wiring: `CloudAgentModule` imports `PushModule` + `BillingModule` (both exported their
+  services), provides `CronParserService`. `nest build` clean; deployed 2026-10-04 and the new
+  tokens verified inside the running container's `/app/dist`.
 
 ## AI provider chain (multi-provider, tier-routed) — _updated 2026-10-04_
 
