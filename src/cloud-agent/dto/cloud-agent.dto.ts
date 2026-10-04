@@ -14,3 +14,15 @@ export class SendMessageDto {
   @IsString()
   sessionId?: string;
 }
+
+export class NotifyDto {
+  @IsString()
+  instance_id!: string;
+
+  @IsOptional()
+  @IsString()
+  bot?: string;
+
+  @IsString()
+  text!: string;
+}

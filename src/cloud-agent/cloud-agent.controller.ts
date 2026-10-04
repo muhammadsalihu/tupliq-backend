@@ -4,13 +4,16 @@ import { Request, Response } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser, RequestUser } from '../auth/decorators/current-user.decorator';
 import { CloudAgentService } from './cloud-agent.service';
-import { ProvisionDto } from './dto/cloud-agent.dto';
+import { ProvisionDto, NotifyDto } from './dto/cloud-agent.dto';
 import { BotsService } from './bots/bots.service';
 import { CreateBotDto, UpdateBotDto } from './bots/dto/bots.dto';
+import { ProGuard, ProOnly } from './guards/pro-guard';
 
 @ApiTags('cloud-agent')
 @ApiBearerAuth('bearer')
 @Controller('cloud-agent')
+@UseGuards(JwtAuthGuard, ProGuard)
+@ProOnly()
 export class CloudAgentController {
   constructor(
     private readonly cloudAgent: CloudAgentService,
@@ -133,6 +136,14 @@ export class CloudAgentController {
     finally { res.end(); }
   }
 
+  // ── Chat sessions (per-bot threads created on first message) ──────
+
+  @UseGuards(JwtAuthGuard)
+  @Get('bots/:id/sessions')
+  listBotSessions(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.botsService.listSessions(user.id, id);
+  }
+
   // ── Team chat ─────────────────────────────────────────────────────
 
   @UseGuards(JwtAuthGuard)
@@ -148,13 +159,6 @@ export class CloudAgentController {
       await this.cloudAgent.handleTeamChat(user.id, input, send);
     } catch (err: any) { send('error', { message: err?.message ?? 'Team chat failed' }); }
     finally { res.end(); }
-  }
-
-  // ── Notify (public, token-authed) ─────────────────────────────────
-
-  @Post('notify')
-  async notify(@Req() req: Request, @Body() body: { instance_id: string; bot: string; text: string }) {
-    return { ok: false, reason: 'Notify endpoint: received but push not implemented yet' };
   }
 
   // ── Routines ──────────────────────────────────────────────────────
@@ -259,5 +263,42 @@ export class CloudAgentController {
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no');
     res.flushHeaders?.();
+  }
+}
+
+/**
+ * Public notify endpoint — NO JWT, NO Pro gate.
+ *
+ * The instance's notify.mjs calls this with its per-instance
+ * GROKBOT_NOTIFY_TOKEN, so access control is the token itself, not a user
+ * session. (The previous implementation sat behind JwtAuthGuard, so every
+ * bot notification 401'd and bots could never proactively message users.)
+ *
+ * Must be its own controller class: @UseGuards applies per controller, and
+ * there is no way to opt a single route out of a class-level guard.
+ */
+@ApiTags('cloud-agent')
+@Controller('cloud-agent')
+export class CloudAgentNotifyController {
+  constructor(private readonly cloudAgent: CloudAgentService) {}
+
+  @Post('notify')
+  async notify(
+    @Req() req: Request & { headers: Record<string, string | string[] | undefined> },
+    @Body() body: NotifyDto,
+  ) {
+    const headerToken = req.headers['x-notify-token'];
+    const bearer = (req.headers.authorization ?? '').replace(/^Bearer\s+/i, '');
+    const token = (Array.isArray(headerToken) ? headerToken[0] : headerToken) || bearer;
+    if (!token) return { ok: false, reason: 'Missing notify token' };
+    if (!body?.instance_id || !body?.text) {
+      return { ok: false, reason: 'instance_id and text are required' };
+    }
+    return this.cloudAgent.deliverBotNotification({
+      instanceId: body.instance_id,
+      token,
+      botHandle: body.bot ?? 'assistant',
+      text: String(body.text).slice(0, 2000),
+    });
   }
 }

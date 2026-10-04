@@ -4,7 +4,29 @@ NestJS + Prisma + Supabase (managed Postgres — **there is no local DB**), runn
 container `tupliq-backend` on the VPS: `127.0.0.1:3002` → **https://api.airbills.digital** via Caddy.
 Read this before changing endpoints, migrations or email.
 
-_Last updated: 2026-09-24._
+_Last updated: 2026-10-04._
+
+## AI provider chain (multi-provider, tier-routed) — _updated 2026-10-04_
+
+Chain lives in `src/agent/providers/` + `provider-chain.service.ts`:
+
+- **Free tier:** Groq (`openai/gpt-oss-120b` via `OPENAI_BASE_URL=https://api.groq.com/openai/v1`)
+  → Gemini (`GEMINI_API_KEY`, `gemini-3.1-flash-lite`) → Anthropic (`ANTHROPIC_API_KEY`, unset)
+  → llm7.io keyless backstop (`DeepSeek-V4-Flash-0731`; anonymous daily token quota is SMALL —
+  emergency only). Gemini `2.5-flash` is retired for new API keys; the alias `gemini-flash-latest`
+  503s intermittently — use pinned `3.1-flash-lite` and bump when it's retired.
+- **Pro tier:** Nebius first (paid, `NEBIUS_API_KEY`, model `zai-org/GLM-5.3-Flash` ~$0.15/$0.50
+  per 1M, `reasoning_effort: low`), then the free chain. Non-pro users can NEVER hit Nebius
+  (`available()` omits it); daily cron asserts `nebius-nonpro-violations:0`.
+- `generateWithFallback(request, preference, isPro)` — `isPro` flows from
+  `billing.isPro(user.id)` in `AgentService.runStream`; the intent router intentionally stays on
+  the free chain.
+- OpenCode is a dead end (Go 403 lapsed sub; Zen paid = insufficient funds; Zen free =
+  client-locked `FreeTierError`).
+- **Daily cron `Tupliq provider health daily`** (job `c5dfad587649`, ~9am, no_agent): runs
+  `~/.hermes/scripts/tupliq-provider-health.sh` → probes Groq/Gemini/Nebius/llm7, E2E
+  `/agent/run` with a minted owner JWT (test run row deleted after), Nebius spend guard.
+
 
 ## Endpoints added this session
 

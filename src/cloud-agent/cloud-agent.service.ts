@@ -1,4 +1,6 @@
 import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
+import { CronParserService } from './cron-parser.service';
+import { PushService } from '../push/push.service';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import * as crypto from 'crypto';
@@ -32,6 +34,8 @@ export class CloudAgentService {
   constructor(
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
+    private readonly cronParser: CronParserService,
+    private readonly push: PushService,
   ) {
     this.apiKey = this.config.get<string>('AGENT37_API_KEY', '');
     if (!this.apiKey) {
@@ -529,11 +533,51 @@ End of app context. The user message follows.
     if (Array.isArray(crons) && crons.length >= MAX_CRONS)
       throw new BadRequestException(`Maximum ${MAX_CRONS} routines per instance.`);
 
+    // Accept plain English ("every weekday at 9am") or raw cron ("0 9 * * 1-5").
+    // The parser is also the validator — clients cannot push arbitrary schedules.
+    const parsed = this.cronParser.parse(dto.schedule);
+    if (!parsed) {
+      throw new BadRequestException(
+        `Could not understand the schedule "${dto.schedule}". ` +
+        'Try e.g. "every weekday at 9am", "daily at 14:30", "every 30 minutes", or a cron like "0 9 * * *".',
+      );
+    }
+
     const cronName = `${bot.handle}: ${dto.name}`;
     const fullPrompt = this.botBrief(bot) + `This is a scheduled routine. ${dto.prompt}`;
     return this.request('POST', `/v1/instances/${instance.instanceId}/crons`, {
-      name: cronName, prompt: fullPrompt, schedule: dto.schedule, timezone: dto.timezone, agent: 'hermes',
+      name: cronName, prompt: fullPrompt, schedule: parsed.schedule, timezone: dto.timezone, agent: 'hermes',
     });
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // Bot → user notifications (called by /cloud-agent/notify)
+  // ═══════════════════════════════════════════════════════════
+
+  /**
+   * Delivers a bot's proactive message to the user as a push notification.
+   * The instance authenticates with its per-instance GROKBOT_NOTIFY_TOKEN,
+   * so a compromised instance can only message its own owner — not others.
+   */
+  async deliverBotNotification(params: { instanceId: string; token: string; botHandle: string; text: string }) {
+    const record = await this.prisma.userInstance.findUnique({
+      where: { instanceId: params.instanceId },
+    });
+    if (!record || !record.notifyToken || record.notifyToken !== params.token) {
+      return { ok: false, reason: 'Unauthorized' };
+    }
+
+    const bot = await this.prisma.bot.findFirst({
+      where: { userId: record.userId, handle: params.botHandle.toLowerCase() },
+    });
+
+    const title = bot ? bot.name : 'Your cloud agent';
+    await this.push.sendToUser(record.userId, {
+      title,
+      body: params.text,
+      data: { type: 'cloud-agent-notify', bot: params.botHandle },
+    });
+    return { ok: true, bot: bot?.handle ?? null };
   }
 
   async deleteRoutine(userId: string, _botId: string, cronName: string) {

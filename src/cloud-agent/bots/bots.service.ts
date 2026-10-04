@@ -73,6 +73,13 @@ export class BotsService {
     return { ok: true };
   }
 
+  /** Chat session list for a bot — threads are created on first message. */
+  async listSessions(userId: string, botId: string) {
+    const bot = await this.prisma.bot.findFirst({ where: { id: botId, userId } });
+    if (!bot) throw new NotFoundException('Bot not found.');
+    return Array.isArray(bot.sessions) ? bot.sessions : [];
+  }
+
   private async assertInstance(userId: string) {
     const instance = await this.prisma.userInstance.findUnique({ where: { userId } });
     if (!instance || instance.status === 'deleted')
