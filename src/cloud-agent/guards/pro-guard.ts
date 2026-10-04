@@ -1,4 +1,4 @@
-import { CanActivate, ExecutionContext, Injectable, SetMetadata } from '@nestjs/common';
+import { CanActivate, ExecutionContext, HttpException, Injectable, SetMetadata } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { BillingService } from '../../billing/billing.service';
 
@@ -44,9 +44,7 @@ export class ProGuard implements CanActivate {
     if (isPro) return true;
 
     // 402 Payment Required — the client shows the upgrade message verbatim.
-    const response = context.switchToHttp().getResponse();
-    response.status(402);
-    return false;
+    throw new HttpException(PRO_UPGRADE_MESSAGE, 402);
   }
 }
 
