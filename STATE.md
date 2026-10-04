@@ -32,6 +32,19 @@ _Last updated: 2026-10-04 (cloud-agent Pro gate + notify + cron parser)._
   services), provides `CronParserService`. `nest build` clean; deployed 2026-10-04 and the new
   tokens verified inside the running container's `/app/dist`.
 
+## Promo codes (Pro grants via redeemable codes)
+
+- `POST /promo/redeem` (JWT): idempotent per (code, user); grants `tupliq-pro` for the
+  code's `durationDays` from NOW, extending an existing active sub rather than overwriting.
+  Seat consumed atomically with the redemption row; `productId: promo:<CODE>`, `store: 'promo'`
+  so manual grants stay distinguishable. Admin routes use `ADMIN_API_KEY` header
+  (`/promo/admin/codes` create + list, `/:id/deactivate`).
+- **Mint/list codes with `~/.local/bin/tupliq-promo.sh`** on the VPS:
+  `tupliq-promo.sh new <count> <maxRedemptions> <durationDays> <prefix> <description>`.
+  First batch Oct 4 2026: 10 x 1-seat, 30-day codes, prefix `PRO`, description
+  "First-10-users free Pro access (Oct 2026)" — retrieve with `tupliq-promo.sh list`.
+- E2E verified live (QA user redeem -> sub row -> cleanup).
+
 ## AI provider chain (multi-provider, tier-routed) — _updated 2026-10-04_
 
 Chain lives in `src/agent/providers/` + `provider-chain.service.ts`:
