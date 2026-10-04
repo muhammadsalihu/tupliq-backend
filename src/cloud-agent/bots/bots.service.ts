@@ -73,11 +73,60 @@ export class BotsService {
     return { ok: true };
   }
 
-  /** Chat session list for a bot — threads are created on first message. */
+  /**
+   * Sessions for a Bot, labelled from the instance.
+   *
+   * The Bot row owns which threads belong to it (the gateway has no such
+   * concept), but the LABELS here were timestamp placeholders. The gateway's
+   * `GET /v1/sessions` carries real titles, so prefer those and fall back to
+   * the stored label only when the harness has nothing for that id.
+   */
   async listSessions(userId: string, botId: string) {
     const bot = await this.prisma.bot.findFirst({ where: { id: botId, userId } });
     if (!bot) throw new NotFoundException('Bot not found.');
-    return Array.isArray(bot.sessions) ? bot.sessions : [];
+    const stored = Array.isArray(bot.sessions) ? bot.sessions : [];
+
+    const instance = await this.prisma.userInstance.findUnique({ where: { userId } });
+    if (!instance || instance.status === 'deleted' || !instance.instanceUrl) return stored;
+
+    let harness: Record<string, any>[] = [];
+    try {
+      const key = process.env.AGENT37_API_KEY;
+      const res = await fetch(`${instance.instanceUrl}/v1/sessions`, {
+        headers: { 'X-Agent37-Key': key ?? '' },
+      });
+      if (res.ok) {
+        const raw = (await res.json()) as any;
+        harness = this.toArray(raw, ['data', 'sessions', 'items']);
+      }
+    } catch {
+      // Gateway unreachable — the stored labels still let the UI render.
+    }
+
+    const byId = new Map(harness.map((s) => [String(s.id), s]));
+    return stored.map((s: any) => {
+      const meta = byId.get(String(s.id));
+      const preview = typeof meta?.preview === 'string' ? meta.preview : '';
+      return {
+        id: String(s.id),
+        label: meta?.title || s.label || preview.slice(0, 60) || 'Chat',
+        messageCount: typeof meta?.message_count === 'number' ? meta.message_count : null,
+        lastActive: meta?.last_active ?? null,
+        preview: preview ? preview.replace(/\s+/g, ' ').slice(0, 120) : '',
+      };
+    });
+  }
+
+  /** Never blank the UI on a surprise shape. */
+  private toArray(v: unknown, keys: string[]): Record<string, any>[] {
+    if (Array.isArray(v)) return v as Record<string, any>[];
+    if (v && typeof v === 'object') {
+      for (const k of keys) {
+        const inner = (v as Record<string, unknown>)[k];
+        if (Array.isArray(inner)) return inner as Record<string, any>[];
+      }
+    }
+    return [];
   }
 
   private async assertInstance(userId: string) {

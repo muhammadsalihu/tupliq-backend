@@ -242,6 +242,13 @@ export class CloudAgentController {
     );
   }
 
+  /** Team chat transcript for one Bot's shared group session. */
+  @UseGuards(JwtAuthGuard)
+  @Get('bots/:id/team/transcript')
+  getTeamTranscript(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.cloudAgent.getTeamTranscript(user.id, id);
+  }
+
   // ── Session transcript ────────────────────────────────────────────
   // Agent37 exposes GET /v1/sessions/{id} with the full `history` array.
   // (There is no /sessions/{id}/messages route.)

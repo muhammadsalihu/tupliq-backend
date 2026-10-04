@@ -725,9 +725,15 @@ ${CloudAgentService.BRIEF_END}
 
     let raw: Record<string, unknown>;
     try {
+      // MUST target the INSTANCE url. Sessions live on the gateway inside the
+      // computer, not the hosting API — omitting the base URL asked
+      // api.agent37.com for a path that only exists per-instance, so every
+      // transcript came back empty.
       raw = (await this.request(
         'GET',
-        `/v1/instances/${instance.instanceId}/sessions/${encodeURIComponent(sessionId)}`,
+        `/v1/sessions/${encodeURIComponent(sessionId)}`,
+        undefined,
+        instance.instanceUrl,
       )) as Record<string, unknown>;
     } catch {
       // An unknown session id returns an empty history rather than a 404, but a
@@ -1063,6 +1069,25 @@ ${CloudAgentService.BRIEF_END}
   }
 
   /**
+   * Transcript for a Bot's TEAM chat.
+   *
+   * The group session is one shared thread per Bot, so the id lives on the Bot
+   * row — Team Chat had no history because it never looked, not because there
+   * was nothing to show.
+   */
+  async getTeamTranscript(userId: string, botId: string) {
+    this.assertKey();
+    const instance = await this.getInstanceOrThrow(userId);
+    const bot = await this.prisma.bot.findFirst({ where: { id: botId, userId } });
+    if (!bot) throw new NotFoundException('Bot not found.');
+    const gsid = (bot as any).groupSessionId;
+    if (!gsid) {
+      return { sessionId: null, activeResponseId: null, messages: [] };
+    }
+    return this.getSessionTranscript(userId, botId, gsid);
+  }
+
+  /**
    * Resume a turn that is still running.
    *
    * A client that reloaded (or opened from a push) can recover a lost reply:
@@ -1081,6 +1106,7 @@ ${CloudAgentService.BRIEF_END}
       `${instance.instanceUrl}/v1/responses/${encodeURIComponent(responseId)}/stream`,
       { headers: { 'X-Agent37-Key': this.apiKey } },
     );
+
     if (!upstream.ok || !upstream.body) {
       const text = await upstream.text().catch(() => '');
       // A finished turn has no live stream; the transcript already holds it.
