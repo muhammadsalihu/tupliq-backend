@@ -59,7 +59,7 @@ export class CloudAgentController {
     @Res() res: Response,
   ) {
     this.sseSetup(res);
-    const send = (event: string, data: unknown) => res.write(`event: ${event}\\ndata: ${JSON.stringify(data)}\\n\\n`);
+    const send = (event: string, data: unknown) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
     try {
       const result = await this.cloudAgent.sendMessageStream(user.id, input, sessionId, send);
       send('done', { sessionId: result.sessionId });
@@ -125,7 +125,7 @@ export class CloudAgentController {
     @Res() res: Response,
   ) {
     this.sseSetup(res);
-    const send = (event: string, data: unknown) => res.write(`event: ${event}\\ndata: ${JSON.stringify(data)}\\n\\n`);
+    const send = (event: string, data: unknown) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
     try {
       const result = await this.cloudAgent.sendBotMessageStream(user.id, id, input, sessionId, send, model);
       send('done', { sessionId: result.sessionId });
@@ -163,7 +163,7 @@ export class CloudAgentController {
     @Res() res: Response,
   ) {
     this.sseSetup(res);
-    const send = (event: string, data: unknown) => res.write(`event: ${event}\\ndata: ${JSON.stringify(data)}\\n\\n`);
+    const send = (event: string, data: unknown) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
     try {
       await this.cloudAgent.handleTeamChat(user.id, input, send);
     } catch (err: any) { send('error', { message: err?.message ?? 'Team chat failed' }); }
@@ -367,7 +367,7 @@ export class CloudAgentNotifyController {
     @Body() body: NotifyDto,
   ) {
     const headerToken = req.headers['x-notify-token'];
-    const bearer = (req.headers.authorization ?? '').replace(/^Bearer\\s+/i, '');
+    const bearer = (req.headers.authorization ?? '').replace(/^Bearer\s+/i, '');
     const token = (Array.isArray(headerToken) ? headerToken[0] : headerToken) || bearer;
     if (!token) return { ok: false, reason: 'Missing notify token' };
     if (!body?.instance_id || !body?.text) {

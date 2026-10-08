@@ -3,6 +3,23 @@ import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { CreateWaitlistEntryDto } from './dto/create-waitlist-entry.dto';
 
+const BLOCKED_DOMAINS = new Set([
+  'tempmail.com','10minutemail.com','dispostable.com','guerrillamail.com',
+  'mailinator.com','throwawaymail.com','fakeinbox.com','temp-mail.org',
+  'yopmail.com','sharklasers.com','trashmail.com','mailnesia.com',
+  'getnada.com','squibyd.com','tempinbox.com','abusemail.com',
+]);
+
+function isSuspiciousEmail(email: string): boolean {
+  const [local, domain] = email.split('@');
+  if (!local || !domain) return true;
+  if (BLOCKED_DOMAINS.has(domain.toLowerCase())) return true;
+  if (/\.{2,}/.test(local)) return true;
+  // dots spaced ≤2 chars apart → machine-generated
+  if (/\.(?=\.{0,2}[^.])/.test(local)) return true;
+  return false;
+}
+
 /**
  * Interest list for the Agent Android app (closed testing) — captured from
  * tupliq.com/agent so the owner can see who wants in and book demos.
@@ -21,6 +38,11 @@ export class WaitlistService {
 
   async join(dto: CreateWaitlistEntryDto) {
     const email = dto.email.trim().toLowerCase();
+
+    if (isSuspiciousEmail(email)) {
+      this.logger.warn(`Blocked suspicious waitlist sign-up: ${email}`);
+      return { ok: true, alreadyOnList: false, blocked: true };
+    }
 
     const existing = await this.prisma.agentWaitlistEntry.findUnique({
       where: { email },

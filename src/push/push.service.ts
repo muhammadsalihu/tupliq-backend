@@ -3,6 +3,8 @@ import { PrismaService } from '../prisma/prisma.service';
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 const ONESIGNAL_APP_ID = process.env.ONESIGNAL_APP_ID ?? '';
+// The v2 org key is sent verbatim as the Authorization header. Base64-encoding
+// it as Basic is the legacy v1 form and OneSignal rejects it outright.
 const ONESIGNAL_REST_API_KEY = process.env.ONESIGNAL_REST_API_KEY ?? '';
 const ONESIGNAL_API = 'https://api.onesignal.com/notifications';
 /** Expo push tickets confirm receipt but not delivery; keep this bounded. */
@@ -53,7 +55,7 @@ export class PushService {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Basic ${Buffer.from(`${ONESIGNAL_REST_API_KEY}:`).toString('base64')}`,
+          Authorization: ONESIGNAL_REST_API_KEY,
         },
         body: JSON.stringify({
           app_id: ONESIGNAL_APP_ID,

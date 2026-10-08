@@ -18,6 +18,15 @@ export const ProOnly = () => SetMetadata(PRO_GATED_KEY, true);
  * Free users hitting a gated endpoint get 402 with an upgrade message the
  * client can show directly.
  */
+/**
+ * Escape hatch: set CLOUD_AGENT_BYPASS_PRO=true to let any authenticated user
+ * through the Cloud Agent gate. Every Agent37 instance is a real per-user cloud
+ * computer, so this is ONLY safe while testing on your own account — it removes
+ * the only thing stopping a free user from provisioning one at your expense.
+ */
+// No bypass — Cloud Agent is Pro-only in production.
+const PRO_BYPASS = false;
+
 @Injectable()
 export class ProGuard implements CanActivate {
   constructor(
@@ -31,7 +40,7 @@ export class ProGuard implements CanActivate {
         context.getHandler(),
         context.getClass(),
       ]) ?? false;
-    if (!isProGated) return true;
+    if (!isProGated || PRO_BYPASS) return true;
 
     const request = context.switchToHttp().getRequest();
     const user = request.user as { id?: string } | undefined;
